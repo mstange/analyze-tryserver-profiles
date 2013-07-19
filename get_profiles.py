@@ -50,6 +50,8 @@ def get_test_in_log(log, testname):
   return match and match.groups()[0]
 
 def get_profilestrings(logpart):
+  if not logpart:
+    return []
   profilestrings = re.compile("data:text/x-sps_profile;base64,.{0,100}?([A-Za-z0-9+/=]{5,})", re.MULTILINE | re.DOTALL).findall(logpart)
   profiles = []
   for base64compressed in profilestrings:
