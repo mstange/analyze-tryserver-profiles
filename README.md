@@ -9,6 +9,6 @@ A few steps to your own Talos comparison profile:
 4. `$ python create_comparison_profile.py --before merged-profile-6dc4ce261069-win7.txt --after merged-profile-1f58befb7d3e-win7.txt -o comparison-profile-win7.txt`
 5. Load `comparison-profile-win7.txt` in [this cleopatra instance](http://tests.themasta.com/cleopatra/).
 
-This is a very rough first stab at the problem. At the moment there is only support for platforms winxp and win7 and Talos test tpaint. The python scripts run on Mac though (I've only tested them on Mac, don't know if they work on Windows).
+This is a very rough first stab at the problem. At the moment there is support for the platforms winxp, win7, snowleopard, lion and mountainlion, and for the Talos tests tpaint and ts_paint. The python scripts have only been tested on Mac, but they should run on all platforms. It does not matter what platform the profile was collected on, symbolication should work everywhere.
 
-The `sym*` files are copied from the [Snappy Symbolication Server repo](https://github.com/vdjeric/Snappy-Symbolication-Server/).
+Some of the `sym*` files are copied from the [Snappy Symbolication Server repo](https://github.com/vdjeric/Snappy-Symbolication-Server/).
