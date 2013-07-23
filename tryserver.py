@@ -19,7 +19,7 @@ class TryserverPush:
       "ts_paint": "Rev4 MacOSX Lion 10.7 try talos other",
       "build": "OS X 10.7 try build"
     },
-    "montainlion": {
+    "mountainlion": {
       "tpaint": "Rev5 MacOSX Mountain Lion 10.8 try talos other",
       "ts_paint": "Rev5 MacOSX Mountain Lion 10.8 try talos other",
       "build": "OS X 10.7 try build"
