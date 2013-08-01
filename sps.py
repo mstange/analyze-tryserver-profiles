@@ -36,5 +36,5 @@ def fixup_sample_data(profile):
 
 def save_profile(profile, filename):
   f = open(filename, "w")
-  f.write(json.dumps(profile))
+  json.dump(profile, f)
   f.close()
