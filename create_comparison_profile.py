@@ -90,28 +90,29 @@ def compress_profile(profile):
   profile["profileJSON"] = { "threads": profile["threads"] }
   del profile["threads"]
 
-parser = argparse.ArgumentParser(description='Process profiles in Tinderbox Talos logs.')
+if __name__ == '__main__':
+  parser = argparse.ArgumentParser(description='Process profiles in Tinderbox Talos logs.')
 
-parser.add_argument("-b", "--before", nargs="*", help="files containing the profiles from before the regression")
-parser.add_argument("-a", "--after", nargs="+", help="files containing the profiles from after the regression")
-parser.add_argument("-o", "--out", default="comparison-profile.txt", help="result filename")
+  parser.add_argument("-b", "--before", nargs="*", default=[], help="files containing the profiles from before the regression")
+  parser.add_argument("-a", "--after", nargs="+", help="files containing the profiles from after the regression")
+  parser.add_argument("-o", "--out", default="comparison-profile.txt", help="result filename")
 
-args = parser.parse_args()
+  args = parser.parse_args()
 
-LogMessage('Reading "before" profiles...')
-profilestrings_before = get_profiles_in_files(args.before)
-profiles_before = [json.loads(s) for s in profilestrings_before]
-LogMessage('Reading "after" profiles...')
-profilestrings_after = get_profiles_in_files(args.after)
-profiles_after = [json.loads(s) for s in profilestrings_after]
-LogMessage('Changing sample weights on "before" profiles to -1...')
-for profile in profiles_before:
-  weight_profile(profile, -1)
-LogMessage('Merging profiles...')
-profile = merge_profiles(profiles_before + profiles_after)
-fixup_sample_data(profile)
-LogMessage('Compressing result profile...')
-compress_profile(profile)
-#fixup_app_path(profile, "FirefoxUX.app", "/Users/markus/Desktop/FirefoxUX.app")
-save_profile(profile, args.out)
-LogMessage('Created {out}.'.format(out=args.out))
+  LogMessage('Reading "before" profiles...')
+  profilestrings_before = get_profiles_in_files(args.before)
+  profiles_before = [json.loads(s) for s in profilestrings_before]
+  LogMessage('Reading "after" profiles...')
+  profilestrings_after = get_profiles_in_files(args.after)
+  profiles_after = [json.loads(s) for s in profilestrings_after]
+  LogMessage('Changing sample weights on "before" profiles to -1...')
+  for profile in profiles_before:
+    weight_profile(profile, -1)
+  LogMessage('Merging profiles...')
+  profile = merge_profiles(profiles_before + profiles_after)
+  fixup_sample_data(profile)
+  LogMessage('Compressing result profile...')
+  compress_profile(profile)
+  #fixup_app_path(profile, "FirefoxUX.app", "/Users/markus/Desktop/FirefoxUX.app")
+  save_profile(profile, args.out)
+  LogMessage('Created {out}.'.format(out=args.out))
