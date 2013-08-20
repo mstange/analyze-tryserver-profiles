@@ -68,9 +68,11 @@ for rev in args.rev:
     LogMessage("No profiles found in any log for revision {rev}.".format(rev=rev))
     continue
   LogMessage("Extracted %d profiles." % len(profiles))
+  LogMessage("Sample counts: %s" % ", ".join("%d" % len(p["threads"][0]["samples"]) for p in profiles))
   LogMessage("Filtering profiles...")
   for profile in profiles:
     sps.filter_measurements(profile, is_startup_test=(args.test[0:2]=="ts"))
+  LogMessage("Sample counts: %s" % ", ".join("%d" % len(p["threads"][0]["samples"]) for p in profiles))
   LogMessage("Symbolicating profiles...")
   for profile in profiles:
     symbolicator.symbolicate_profile(profile)
