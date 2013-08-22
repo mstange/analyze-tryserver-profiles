@@ -8,7 +8,8 @@ import tempfile
 from logging import LogTrace, LogError, LogMessage, SetTracingEnabled
 
 
-gProfileStringRE = re.compile("Begin SPS Profile:.{0,100}?data:text/x-sps_profile;base64,(.*?)(End SPS Profile.|Begin |DEBUG|$)", re.DOTALL)
+gSPSProfileStringRE = re.compile("Begin SPS Profile:.{0,100}?data:text/x-sps_profile;base64,(.*?)(End SPS Profile.|Begin |DEBUG|$)", re.DOTALL)
+gReflowProfileStringRE = re.compile("Begin Reflow Profile:.{0,100}?data:text/x-sps_profile;base64,(.*?)(End Reflow Profile.|Begin |DEBUG|$)", re.DOTALL)
 gSymbolStringRE = re.compile("Begin system library symbols:.{0,100}?data:application/zip;base64,(.*?)(End system library symbols.|Begin |DEBUG|$)", re.DOTALL)
 gBase64RE = re.compile("([A-Za-z0-9+/=]{5,})")
 
@@ -16,8 +17,19 @@ class TalosLogAnalyzer:
   def __init__(self, log):
     self.log = log
 
-  def get_profiles(self):
-    profilestrings = gProfileStringRE.findall(self.log)
+  def get_sps_profiles(self):
+    profilestrings = gSPSProfileStringRE.findall(self.log)
+    for profilestring in profilestrings:
+      try:
+        base64compressed = self._get_concatenated_base64(profilestring[0])
+        compressed = base64.b64decode(base64compressed)
+        profile = zlib.decompress(compressed)
+        yield profile
+      except:
+        LogError("decoding or uncompressing failed")
+
+  def get_reflow_profiles(self):
+    profilestrings = gReflowProfileStringRE.findall(self.log)
     for profilestring in profilestrings:
       try:
         base64compressed = self._get_concatenated_base64(profilestring[0])

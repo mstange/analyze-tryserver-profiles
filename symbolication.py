@@ -13,6 +13,8 @@ class ProfileSymbolicator:
     symbol_zip_file.extractall(self.options["symbolPaths"]["FIREFOX"])
 
   def symbolicate_profile(self, profile_json):
+    if "libs" not in profile_json:
+      return
     shared_libraries = json.loads(profile_json["libs"])
     shared_libraries.sort(key=lambda lib: lib["start"])
     addresses = self._find_addresses(profile_json)
