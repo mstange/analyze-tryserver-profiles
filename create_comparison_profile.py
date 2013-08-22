@@ -9,6 +9,7 @@ import urllib2
 import StringIO
 import gzip
 from logging import LogTrace, LogError, LogMessage, SetTracingEnabled
+import sps
 
 def read_file(filename):
   f = open(filename, "r")
@@ -18,26 +19,6 @@ def read_file(filename):
 
 def get_profiles_in_files(filenames):
   return [read_file(filename) for filename in filenames]
-
-def merge_profiles(profiles):
-  first_profile = profiles[0]
-  other_profiles = profiles[1:]
-  if "profileJSON" in first_profile:
-    first_samples = first_profile["profileJSON"]["threads"][0]["samples"]
-  else:
-    first_samples = first_profile["threads"][0]["samples"]
-  for other_profile in other_profiles:
-    if "profileJSON" in other_profile:
-      other_samples = other_profile["profileJSON"]["threads"][0]["samples"]
-    else:
-      other_samples = other_profile["threads"][0]["samples"]
-    first_samples.extend(other_samples)
-  if "symbolicationTable" in first_profile:
-    symbolicationTable = first_profile["symbolicationTable"]
-    for other_profile in other_profiles:
-      if "symbolicationTable" in other_profile:
-        symbolicationTable.update(other_profile["symbolicationTable"])
-  return first_profile
 
 def fixup_sample_data(profile):
   if "profileJSON" in profile:
@@ -49,46 +30,18 @@ def fixup_sample_data(profile):
     if "responsiveness" in sample:
       del sample["responsiveness"]
 
-def weight_profile(profile, weight):
+def weight_profile(profile, factor):
   if "profileJSON" in profile:
     samples = profile["profileJSON"]["threads"][0]["samples"]
   else:
     samples = profile["threads"][0]["samples"]
   for i, sample in enumerate(samples):
-    sample["weight"] = weight
-
-def fixup_app_path(profile, app, new_path):
-  libs = json.loads(profile["libs"])
-  for lib in libs:
-    index = string.find(lib["name"], app)
-    if index > -1:
-      lib["name"] = new_path + lib["name"][index + len(app):]
-  profile["libs"] = json.dumps(libs)
-
-def save_profile(profile, filename):
-  f = open(filename, "w")
-  f.write(json.dumps(profile))
-  f.close()
+    weightbefore = sample["weight"] if "weight" in sample else 1
+    sample["weight"] = factor * weightbefore
 
 def get_json(url):
   io = urllib2.urlopen(url, None, 30)
   return json.load(io)
-
-def compress_profile(profile):
-  symbols = set()
-  for thread in profile["threads"]:
-    for sample in thread["samples"]:
-      for frame in sample["frames"]:
-        symbols.add(frame["location"])
-  location_to_index = dict((l, str(i)) for i, l in enumerate(symbols))
-  for thread in profile["threads"]:
-    for sample in thread["samples"]:
-      for frame in sample["frames"]:
-        frame["location"] = location_to_index[frame["location"]]
-  profile["format"] = "profileJSONWithSymbolicationTable,1"
-  profile["symbolicationTable"] = dict(enumerate(symbols))
-  profile["profileJSON"] = { "threads": profile["threads"] }
-  del profile["threads"]
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Process profiles in Tinderbox Talos logs.')
@@ -109,10 +62,9 @@ if __name__ == '__main__':
   for profile in profiles_before:
     weight_profile(profile, -1)
   LogMessage('Merging profiles...')
-  profile = merge_profiles(profiles_before + profiles_after)
+  profile = sps.merge_profiles(profiles_before + profiles_after)
   fixup_sample_data(profile)
   LogMessage('Compressing result profile...')
-  compress_profile(profile)
-  #fixup_app_path(profile, "FirefoxUX.app", "/Users/markus/Desktop/FirefoxUX.app")
-  save_profile(profile, args.out)
+  sps.compress_profile(profile)
+  sps.save_profile(profile, args.out)
   LogMessage('Created {out}.'.format(out=args.out))
