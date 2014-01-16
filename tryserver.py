@@ -10,30 +10,43 @@ from logging import LogTrace, LogError, LogMessage, SetTracingEnabled
 class TryserverPush:
   buildernames = {
     "snowleopard": {
+      "tart": "Rev4 MacOSX Snow Leopard 10.6 try talos svgr",
       "tpaint": "Rev4 MacOSX Snow Leopard 10.6 try talos other",
       "ts_paint": "Rev4 MacOSX Snow Leopard 10.6 try talos other",
+      "tart": "Rev4 MacOSX Snow Leopard 10.6 try talos svgr",
       "build": "OS X 10.7 try build"
     },
     "lion": {
+      "tart": "Rev4 MacOSX Lion 10.7 try talos svgr",
       "tpaint": "Rev4 MacOSX Lion 10.7 try talos other",
       "ts_paint": "Rev4 MacOSX Lion 10.7 try talos other",
+      "tart": "Rev4 MacOSX Lion 10.7 try talos svgr",
       "build": "OS X 10.7 try build"
     },
     "mountainlion": {
+      "tart": "Rev5 MacOSX Mountain Lion 10.8 try talos svgr",
       "tpaint": "Rev5 MacOSX Mountain Lion 10.8 try talos other",
       "ts_paint": "Rev5 MacOSX Mountain Lion 10.8 try talos other",
+      "tart": "Rev5 MacOSX Mountain Lion 10.8 try talos svgr",
       "build": "OS X 10.7 try build"
     },
     "win7": {
       "tpaint": 'Windows 7 32-bit try talos other',
       "ts_paint": 'Windows 7 32-bit try talos other',
+      "tart": 'Windows 7 32-bit try talos svgr',
       "build": "WINNT 5.2 try build"
     },
     "winxp": {
       "tpaint": 'Windows XP 32-bit try talos other',
       "ts_paint": 'Windows XP 32-bit try talos other',
+      "tart": 'Windows XP 32-bit try talos svgr',
       "build": "WINNT 5.2 try build"
-    }
+    },
+    "win8": {
+      "tart": 'WINNT 6.2 try talos svgr',
+      "build": "WINNT 5.2 try build",
+      "tresize": 'WINNT 6.2 try talos chromez',
+    },
   }
 
   def __init__(self, rev):
@@ -82,8 +95,8 @@ class TryserverPush:
     if not platform in self.buildernames:
       LogError("Unknown try platform {platform}.".format(platform=platform))
       return ""
-    buildername = self.buildernames[platform]['build']
-    buildruns = [run for run in self.tbpl_runs if run['buildername'] == buildername]
+    buildernames = self.buildernames[platform].values()
+    buildruns = [run for run in self.tbpl_runs if run['buildername'] in buildernames]
     if len(buildruns) < 1:
       LogError("The try push with revision {rev} does not have a build for platform {platform}.".format(rev=self.rev, platform=platform))
       return ""

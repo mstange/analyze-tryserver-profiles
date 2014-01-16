@@ -8,11 +8,11 @@ def filter_measurements(profile, is_startup_test=False):
   in_measurement = is_startup_test
   for sample in samples:
     if "marker" in sample:
-      if startMeasurementMarker in sample["marker"]:
-        in_measurement = True
-      if stopMeasurementMarker in sample["marker"]:
-        in_measurement = False
-      del sample["marker"]
+      for marker in sample["marker"]:
+        if startMeasurementMarker in marker["name"]:
+          in_measurement = True
+        if stopMeasurementMarker in marker["name"]:
+          in_measurement = False
     if in_measurement:
       measured_samples.append(sample)
   profile["threads"][0]["samples"] = measured_samples
@@ -26,14 +26,6 @@ def merge_profiles(profiles):
     other_samples = other_profile["threads"][0]["samples"]
     first_samples.extend(other_samples)
   return first_profile
-
-def fixup_sample_data(profile):
-  samples = profile["threads"][0]["samples"]
-  for i, sample in enumerate(samples):
-    sample["time"] = i
-    if "responsiveness" in sample:
-      del sample["responsiveness"]
-
 
 def compress_profile(profile):
   symbols = set()
