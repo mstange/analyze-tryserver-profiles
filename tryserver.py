@@ -11,34 +11,31 @@ class TryserverPush:
   buildernames = {
     "snowleopard": {
       "tart": "Rev4 MacOSX Snow Leopard 10.6 try talos svgr",
-      "tpaint": "Rev4 MacOSX Snow Leopard 10.6 try talos other",
-      "ts_paint": "Rev4 MacOSX Snow Leopard 10.6 try talos other",
-      "tart": "Rev4 MacOSX Snow Leopard 10.6 try talos svgr",
+      "tpaint": "Rev4 MacOSX Snow Leopard 10.6 try talos other_nol64",
+      "ts_paint": "Rev4 MacOSX Snow Leopard 10.6 try talos other_nol64",
       "build": "OS X 10.7 try build"
     },
     "lion": {
       "tart": "Rev4 MacOSX Lion 10.7 try talos svgr",
-      "tpaint": "Rev4 MacOSX Lion 10.7 try talos other",
-      "ts_paint": "Rev4 MacOSX Lion 10.7 try talos other",
-      "tart": "Rev4 MacOSX Lion 10.7 try talos svgr",
+      "tpaint": "Rev4 MacOSX Lion 10.7 try talos other_nol64",
+      "ts_paint": "Rev4 MacOSX Lion 10.7 try talos other_nol64",
       "build": "OS X 10.7 try build"
     },
     "mountainlion": {
       "tart": "Rev5 MacOSX Mountain Lion 10.8 try talos svgr",
-      "tpaint": "Rev5 MacOSX Mountain Lion 10.8 try talos other",
-      "ts_paint": "Rev5 MacOSX Mountain Lion 10.8 try talos other",
-      "tart": "Rev5 MacOSX Mountain Lion 10.8 try talos svgr",
+      "tpaint": "Rev5 MacOSX Mountain Lion 10.8 try talos other_nol64",
+      "ts_paint": "Rev5 MacOSX Mountain Lion 10.8 try talos other_nol64",
       "build": "OS X 10.7 try build"
     },
     "win7": {
-      "tpaint": 'Windows 7 32-bit try talos other',
-      "ts_paint": 'Windows 7 32-bit try talos other',
+      "tpaint": 'Windows 7 32-bit try talos other_nol64',
+      "ts_paint": 'Windows 7 32-bit try talos other_nol64',
       "tart": 'Windows 7 32-bit try talos svgr',
       "build": "WINNT 5.2 try build"
     },
     "winxp": {
-      "tpaint": 'Windows XP 32-bit try talos other',
-      "ts_paint": 'Windows XP 32-bit try talos other',
+      "tpaint": 'Windows XP 32-bit try talos other_nol64',
+      "ts_paint": 'Windows XP 32-bit try talos other_nol64',
       "tart": 'Windows XP 32-bit try talos svgr',
       "build": "WINNT 5.2 try build"
     },
@@ -51,7 +48,7 @@ class TryserverPush:
 
   def __init__(self, rev):
     self.rev = rev
-    self.tbpl_runs = self._get_json("https://tbpl.mozilla.org/php/getRevisionBuilds.php?branch=try&rev=" + rev)
+    self.treeherder_data = self._get_json("https://treeherder.mozilla.org/api/project/try/resultset/?count=1&format=json&with_jobs=true&full=true&revision=" + rev)
 
   def get_talos_testlogs(self, platform, test):
     if not platform in self.buildernames:
@@ -60,14 +57,25 @@ class TryserverPush:
     if not test in self.buildernames[platform]:
       LogError("Unknown test {test} on try platform {platform}.".format(platform=platform, test=test))
       raise StopIteration
-    for run in self.tbpl_runs:
-      if run['buildername'] != self.buildernames[platform][test]:
-        continue
-      url = run["log"]
+    for url in self._get_log_urls_for_builders([self.buildernames[platform][test]]):
       LogMessage("Downloading log for talos run {logfilename}...".format(logfilename=url[url.rfind("/")+1:]))
       log = self._get_gzipped_log(url)
       testlog = self._get_test_in_log(log, test)
       yield testlog
+
+  def _get_log_urls_for_builders(self, buildernames):
+    job_property_index_id = self.treeherder_data["job_property_names"].index("id")
+    job_property_index_buildername = self.treeherder_data["job_property_names"].index("ref_data_name")
+    for result in self.treeherder_data["results"]:
+      for platform in result["platforms"]:
+        for group in platform["groups"]:
+          for job in group["jobs"]:
+            if job[job_property_index_buildername] not in buildernames:
+              continue
+            job_id = job[job_property_index_id]
+            log_url_info = self._get_json("https://treeherder.mozilla.org/api/project/try/job-log-url/?job_id=%d" % job_id)
+            for info in log_url_info:
+              yield info["url"]
 
   def get_build_symbols(self, platform):
     if not platform in self.buildernames:
@@ -96,12 +104,10 @@ class TryserverPush:
       LogError("Unknown try platform {platform}.".format(platform=platform))
       return ""
     buildernames = self.buildernames[platform].values()
-    buildruns = [run for run in self.tbpl_runs if run['buildername'] in buildernames]
-    if len(buildruns) < 1:
-      LogError("The try push with revision {rev} does not have a build for platform {platform}.".format(rev=self.rev, platform=platform))
-      return ""
-    build_log_url = buildruns[0]["log"]
-    return build_log_url[0:build_log_url.rfind('/')+1]
+    for build_log_url in self._get_log_urls_for_builders(buildernames):
+      return build_log_url[0:build_log_url.rfind('/')+1]
+    LogError("The try push with revision {rev} does not have a build for platform {platform}.".format(rev=self.rev, platform=platform))
+    return ""
 
   def _get_gzipped_log(self, url):
     try:
