@@ -1,7 +1,12 @@
+import cStringIO
+import hashlib
 import json
+import os
+import urllib2
 import zipfile
 from symFileManager import SymFileManager
 from symbolicationRequest import SymbolicationRequest
+from logging import LogTrace, LogError, LogMessage, SetTracingEnabled
 
 
 class ProfileSymbolicator:
@@ -9,8 +14,37 @@ class ProfileSymbolicator:
     self.options = options
     self.sym_file_manager = SymFileManager(self.options)
 
+  def integrate_symbol_zip_from_url(self, symbol_zip_url):
+    if self.have_integrated(symbol_zip_url):
+      return
+    LogMessage("Retrieving symbol zip from {symbol_zip_url}...".format(symbol_zip_url=symbol_zip_url))
+    io = urllib2.urlopen(symbol_zip_url, None, 30)
+    sio = cStringIO.StringIO(io.read())
+    zf = zipfile.ZipFile(sio)
+    io.close()
+    self.integrate_symbol_zip(zf)
+    zf.close()
+    self._create_file_if_not_exists(self._marker_file(symbol_zip_url))
+
+  def _create_file_if_not_exists(self, filename):
+    try:
+      os.makedirs(os.path.dirname(filename))
+    except OSError:
+      pass
+    try:
+      open(filename, 'a').close()
+    except IOError:
+      pass
+
   def integrate_symbol_zip(self, symbol_zip_file):
     symbol_zip_file.extractall(self.options["symbolPaths"]["FIREFOX"])
+
+  def _marker_file(self, symbol_zip_url):
+    marker_dir = os.path.join(self.options["symbolPaths"]["FIREFOX"], ".markers")
+    return os.path.join(marker_dir, hashlib.sha1(symbol_zip_url).hexdigest())
+
+  def have_integrated(self, symbol_zip_url):
+    return os.path.isfile(self._marker_file(symbol_zip_url))
 
   def symbolicate_profile(self, profile_json):
     if "libs" not in profile_json:
