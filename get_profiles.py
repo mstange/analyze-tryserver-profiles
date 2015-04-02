@@ -39,10 +39,9 @@ gSymbolicationOptions = {
 
 parser = argparse.ArgumentParser(description='Process profiles in Tinderbox Talos logs.')
 
-parser.add_argument("-o", "--out", help="output filename")
 parser.add_argument("-r", "--rev", nargs="+", help="tryserver revisions")
 parser.add_argument("-p", "--platform", choices=["snowleopard", "lion", "mountainlion", "winxp", "win7", "win8", "linux", "linux64"], help="tryserver Talos platform")
-parser.add_argument("-t", "--test", choices=["tpaint", "ts_paint", "cart", "tart", "tresize", "tscrollx", "tsvgx", "tp5o", "tp5o_scroll", "sessionrestore", "glterrain"], help="name of the test")
+parser.add_argument("-t", "--test", choices=["tpaint", "ts_paint", "cart", "tart", "tresize", "tscrollx", "tsvgx", "tp5o", "tp5o_scroll", "sessionrestore", "glterrain", "kraken"], help="name of the test")
 parser.add_argument("-m", "--max", type=int, default=1000, help="maximum number of profiles")
 
 args = parser.parse_args()

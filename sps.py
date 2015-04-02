@@ -1,4 +1,8 @@
-import simplejson as json
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+import json
 
 def filter_measurements(profile, is_startup_test=False):
   startMeasurementMarker = "MEASUREMENT_START"
@@ -62,7 +66,6 @@ def merge_profiles(profiles):
       except StopIteration:
         first_thread = { "name": other_thread["name"], "samples": [], "markers": [] }
         first_profile["threads"].append(first_thread)
-      
 
       if not interleave:
         time_delta = other_profile["meta"]["startTime"] - first_profile["meta"]["startTime"]

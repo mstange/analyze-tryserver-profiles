@@ -37,19 +37,11 @@ gSymbolicationOptions = {
   }
 }
 
-parser = argparse.ArgumentParser(description='Symbolicate a profile.')
-
-parser.add_argument("input", help="input filename")
-parser.add_argument("output", help="output filename")
-
-args = parser.parse_args()
-
 symbolicator = symbolication.ProfileSymbolicator(gSymbolicationOptions)
 
-f = open(args.input, "r")
-profile = json.load(f)
-f.close()
-symbolicator.symbolicate_profile(profile)
-f = open(args.output, "w")
-json.dump(profile, f)
-f.close()
+parser = argparse.ArgumentParser(description='Symbolicate a profile.')
+parser.add_argument("inout", nargs="+", help="files to symbolicate (will be overwritten)")
+args = parser.parse_args()
+
+for filename in args.inout:
+  symbolicator.symbolicate_profile_file(filename)
