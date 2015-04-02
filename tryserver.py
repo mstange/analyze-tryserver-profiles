@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import urllib2
 import StringIO
@@ -7,89 +8,73 @@ import gzip
 import zipfile
 from logging import LogTrace, LogError, LogMessage, SetTracingEnabled
 
+class FileInZip:
+  def __init__(self, zf, filename):
+    self.zf = zf
+    self.filename = filename
+
+  def get_json(self):
+    f = self.zf.open(self.filename)
+    result = json.load(f)
+    f.close()
+    return result
+
 class TryserverPush:
-  buildernames = {
-    "snowleopard": {
-      "tart": "Rev4 MacOSX Snow Leopard 10.6 try talos svgr",
-      "tpaint": "Rev4 MacOSX Snow Leopard 10.6 try talos other_nol64",
-      "ts_paint": "Rev4 MacOSX Snow Leopard 10.6 try talos other_nol64",
-      "build": "OS X 10.7 try build"
-    },
-    "lion": {
-      "tart": "Rev4 MacOSX Lion 10.7 try talos svgr",
-      "tpaint": "Rev4 MacOSX Lion 10.7 try talos other_nol64",
-      "ts_paint": "Rev4 MacOSX Lion 10.7 try talos other_nol64",
-      "build": "OS X 10.7 try build"
-    },
-    "mountainlion": {
-      "tart": "Rev5 MacOSX Mountain Lion 10.8 try talos svgr",
-      "tpaint": "Rev5 MacOSX Mountain Lion 10.8 try talos other_nol64",
-      "ts_paint": "Rev5 MacOSX Mountain Lion 10.8 try talos other_nol64",
-      "build": "OS X 10.7 try build"
-    },
-    "win7": {
-      "tpaint": 'Windows 7 32-bit try talos other_nol64',
-      "ts_paint": 'Windows 7 32-bit try talos other_nol64',
-      "tart": 'Windows 7 32-bit try talos svgr',
-      "build": "WINNT 5.2 try build"
-    },
-    "winxp": {
-      "tpaint": 'Windows XP 32-bit try talos other_nol64',
-      "ts_paint": 'Windows XP 32-bit try talos other_nol64',
-      "tart": 'Windows XP 32-bit try talos svgr',
-      "build": "WINNT 5.2 try build"
-    },
-    "win8": {
-      "tart": 'WINNT 6.2 try talos svgr',
-      "build": "WINNT 5.2 try build",
-      "tresize": 'WINNT 6.2 try talos chromez',
-    },
+  treeherder_platformnames = {
+    "snowleopard": "osx-10-6",
+    "lion": "osx-10-7",
+    "mountainlion": "osx-10-8",
+    "win7": "windows7-32",
+    "winxp": "windowsxp",
+    "win8": "windows8-64",
+    "linux": "linux32",
+    "linux64": "linux64",
   }
 
   def __init__(self, rev):
     self.rev = rev
     self.treeherder_data = self._get_json("https://treeherder.mozilla.org/api/project/try/resultset/?count=1&format=json&with_jobs=true&full=true&revision=" + rev)
 
-  def get_talos_testlogs(self, platform, test):
-    if not platform in self.buildernames:
-      LogError("Unknown try platform {platform}.".format(platform=platform))
-      raise StopIteration
-    if not test in self.buildernames[platform]:
-      LogError("Unknown test {test} on try platform {platform}.".format(platform=platform, test=test))
-      raise StopIteration
-    for url in self._get_log_urls_for_builders([self.buildernames[platform][test]]):
-      LogMessage("Downloading log for talos run {logfilename}...".format(logfilename=url[url.rfind("/")+1:]))
-      log = self._get_gzipped_log(url)
-      testlog = self._get_test_in_log(log, test)
-      yield testlog
+  def find_talos_zips(self, platform, test):
+    # Find all talos runs that link to a profile_{test}.zip.
+    link_value = "profile_{test}.zip".format(test=test)
+    for info in self._get_jobs_on_platform(platform):
+      job_details = info.get("blob", {}).get("job_details", [])
+      for job_detail in job_details:
+        if job_detail["content_type"] == "link" and job_detail["value"] == link_value:
+          yield job_detail["url"]
 
-  def _get_log_urls_for_builders(self, buildernames):
+  def _get_jobs_on_platform(self, platform):
+    if not platform in self.treeherder_platformnames:
+      LogError("Unknown try platform {platform}.".format(platform=platform))
+      return
     job_property_index_id = self.treeherder_data["job_property_names"].index("id")
-    job_property_index_buildername = self.treeherder_data["job_property_names"].index("ref_data_name")
     for result in self.treeherder_data["results"]:
-      for platform in result["platforms"]:
-        for group in platform["groups"]:
+      for th_platform in result["platforms"]:
+        if th_platform["name"] != self.treeherder_platformnames[platform]:
+          continue
+        for group in th_platform["groups"]:
           for job in group["jobs"]:
-            if job[job_property_index_buildername] not in buildernames:
-              continue
             job_id = job[job_property_index_id]
-            log_url_info = self._get_json("https://treeherder.mozilla.org/api/project/try/job-log-url/?job_id=%d" % job_id)
-            for info in log_url_info:
-              yield info["url"]
+            job_info = self._get_json("https://treeherder.mozilla.org/api/project/try/artifact/?job_id=%d&name=Job+Info&type=json" % job_id)
+            for info in job_info:
+              yield info
 
-  def get_build_symbols(self, platform):
-    if not platform in self.buildernames:
-      LogError("Unknown try platform {platform}.".format(platform=platform))
-      return None
-    dir = self._get_build_dir(platform)
+  def get_build_symbols_url(self, dir):
     if not dir:
       return None
-    symbols_zip_url = self._url_in_dir_ending_in("crashreporter-symbols.zip", dir)
-    io = urllib2.urlopen(symbols_zip_url, None, 30)
+    return self._url_in_dir_ending_in("crashreporter-symbols.zip", dir)
+
+  def get_talos_profiles(self, zip_url):
+    LogMessage("Retrieving profile zip from {zip_url}...".format(zip_url=zip_url))
+    io = urllib2.urlopen(zip_url, None, 30)
     sio = cStringIO.StringIO(io.read())
     zf = zipfile.ZipFile(sio)
     io.close()
-    return zf
+    for filename in zf.namelist():
+      profilename_subtestname = os.path.dirname(filename)
+      subtestname = os.path.basename(profilename_subtestname)
+      yield (subtestname, FileInZip(zf, filename))
 
   def _get_json(self, url):
     io = urllib2.urlopen(url, None, 30)
@@ -99,27 +84,14 @@ class TryserverPush:
     match = re.compile("Running test " + testname + ":(.*?)(Running test |$)", re.DOTALL).search(log)
     return (match and match.groups()[0]) or ""
 
-  def _get_build_dir(self, platform):
-    if not platform in self.buildernames:
-      LogError("Unknown try platform {platform}.".format(platform=platform))
-      return ""
-    buildernames = self.buildernames[platform].values()
-    for build_log_url in self._get_log_urls_for_builders(buildernames):
-      return build_log_url[0:build_log_url.rfind('/')+1]
+  def get_build_dir(self, platform):
+    for info in self._get_jobs_on_platform(platform):
+      if "blob" in info and "logurl" in info["blob"]:
+        build_log_url = info["blob"]["logurl"]
+        return build_log_url[0:build_log_url.rfind('/')+1] 
+
     LogError("The try push with revision {rev} does not have a build for platform {platform}.".format(rev=self.rev, platform=platform))
     return ""
-
-  def _get_gzipped_log(self, url):
-    try:
-      io = urllib2.urlopen(url, None, 30)
-    except:
-      return ""
-    sio = StringIO.StringIO(io.read())
-    io.close()
-    gz = gzip.GzipFile(fileobj=sio)
-    result = gz.read()
-    gz.close()
-    return result
 
   def _url_in_dir_ending_in(self, postfix, dir):
     io = urllib2.urlopen(dir, None, 30)

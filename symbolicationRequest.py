@@ -1,4 +1,8 @@
-from logging import LogTrace, LogError, LogMessage
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+from symLogging import LogTrace, LogError, LogMessage
 import symFileManager
 
 import re
@@ -20,32 +24,6 @@ class ModuleV3:
     self.libName = libName
     self.breakpadId = breakpadId
 
-def getModuleV2(libName, pdbAge, pdbSig, pdbName):
-  if isinstance(pdbSig, basestring):
-    matches = gPdbSigRE.match(pdbSig)
-    if matches:
-      pdbSig = "".join(matches.groups()).upper()
-    elif gPdbSigRE2.match(pdbSig):
-      pdbSig = pdbSig.upper()
-    else:
-      LogTrace("Bad PDB signature: " + pdbSig)
-      return None
-  else:
-    LogTrace("Bad PDB signature: " + str(pdbSig))
-    return None
-
-  if isinstance(pdbAge, basestring):
-    pdbAge = int(pdbAge)
-  if not isinstance(pdbAge, (int, long)) or int(pdbAge) < 0:
-    LogTrace("Bad PDB age: " + str(pdbAge))
-    return None
-  pdbAge = (hex(pdbAge)[2:]).lower()
-
-  if not isinstance(pdbName, basestring) or not gLibNameRE.match(pdbName):
-    LogTrace("Bad PDB name: " + str(pdbName))
-    return None
-  return ModuleV3(pdbName, pdbSig + pdbAge)
-
 def getModuleV3(libName, breakpadId):
   if not isinstance(libName, basestring) or not gLibNameRE.match(libName):
     LogTrace("Bad library name: " + str(libName))
@@ -62,14 +40,18 @@ class SymbolicationRequest:
     self.Reset()
     self.symFileManager = symFileManager
     self.stacks = []
-    self.memoryMaps = []
+    self.combinedMemoryMap = []
+    self.knownModules = []
+    self.includeKnownModulesInResponse = True
     self.symbolSources = []
     self.ParseRequests(rawRequests)
 
   def Reset(self):
     self.symFileManager = None
     self.isValidRequest = False
-    self.memoryMaps = []
+    self.combinedMemoryMap = []
+    self.knownModules = []
+    self.includeKnownModulesInResponse = True
     self.stacks = []
     self.appName = ""
     self.osName = ""
@@ -87,7 +69,7 @@ class SymbolicationRequest:
         LogTrace("Request is missing 'version' field")
         return
       version = rawRequests["version"]
-      if version != 2 and version != 3:
+      if version != 4:
         LogTrace("Invalid version: %s" % version)
         return
 
@@ -96,19 +78,6 @@ class SymbolicationRequest:
           LogTrace("Invalid 'forwards' field: " + str(rawRequests["forwarded"]))
           return
         self.forwardCount = rawRequests["forwarded"]
-
-      # Only used for compatibility with older clients.
-      # TODO: Remove after June 2013.
-      if "appName" in rawRequests:
-        requestingApp = rawRequests["appName"].upper()
-        if requestingApp in self.symFileManager.sOptions["symbolPaths"]:
-          self.symbolSources.append(requestingApp)
-
-      # Ditto
-      if "osName" in rawRequests:
-        requestingOs = rawRequests["osName"].upper()
-        if requestingOs in self.symFileManager.sOptions["symbolPaths"]:
-          self.symbolSources.append(requestingOs)
 
       # Client specifies which sets of symbols should be used
       if "symbolSources" in rawRequests:
@@ -150,17 +119,10 @@ class SymbolicationRequest:
           LogTrace("Entry in memory map is not a list: " + str(module))
           return
 
-        if version == 2:
-          if len(module) != 4:
-            LogTrace("Entry in memory map is not a 4 item list: " + str(module))
-            return
-          module = getModuleV2(*module)
-        else:
-          assert version == 3
-          if len(module) != 2:
-            LogTrace("Entry in memory map is not a 2 item list: " + str(module))
-            return
-          module = getModuleV3(*module)
+        if len(module) != 2:
+          LogTrace("Entry in memory map is not a 2 item list: " + str(module))
+          return
+        module = getModuleV3(*module)
 
         if module is None:
           return
@@ -168,6 +130,10 @@ class SymbolicationRequest:
         cleanMemoryMap.append(module)
 
       self.combinedMemoryMap = cleanMemoryMap
+      self.knownModules = [False] * len(self.combinedMemoryMap)
+
+      if version < 4:
+        self.includeKnownModulesInResponse = False
 
       # Check stack is well-formatted
       for stack in stacks:
@@ -197,12 +163,13 @@ class SymbolicationRequest:
       url = self.symFileManager.sOptions["remoteSymbolServer"]
       rawModules =  []
       moduleToIndex = {}
-      moduleCount = 0
-      for m in modules:
+      newIndexToOldIndex = {}
+      for moduleIndex, m in modules:
         l = [m.libName, m.breakpadId]
+        newModuleIndex = len(rawModules)
         rawModules.append(l)
-        moduleToIndex[m] = moduleCount
-        moduleCount += 1
+        moduleToIndex[m] = newModuleIndex
+        newIndexToOldIndex[newModuleIndex] = moduleIndex
 
       rawStack = []
       for entry in stack:
@@ -212,25 +179,45 @@ class SymbolicationRequest:
         newIndex = moduleToIndex[module]
         rawStack.append([newIndex, offset])
 
-      requestObj = { "symbolSources": self.symbolSources,
-                     "stacks": [rawStack], "memoryMap": rawModules,
-                     "forwarded": self.forwardCount + 1, "version": 3 }
-      requestJson = json.dumps(requestObj)
-      headers = { "Content-Type": "application/json" }
-      requestHandle = urllib2.Request(url, requestJson, headers)
-      response = urllib2.urlopen(requestHandle)
+      requestVersion = 4
+      while True:
+        requestObj = { "symbolSources": self.symbolSources,
+                       "stacks": [rawStack], "memoryMap": rawModules,
+                       "forwarded": self.forwardCount + 1, "version": requestVersion }
+        requestJson = json.dumps(requestObj)
+        headers = { "Content-Type": "application/json" }
+        requestHandle = urllib2.Request(url, requestJson, headers)
+        try:
+          response = urllib2.urlopen(requestHandle)
+        except Exception as e:
+          if requestVersion == 4:
+            # Try again with version 3
+            requestVersion = 3
+            continue
+          raise e
+        succeededVersion = requestVersion
+        break
+
     except Exception as e:
       LogError("Exception while forwarding request: " + str(e))
       return
 
     try:
-      responseJson = response.read()
+      responseJson = json.loads(response.read())
     except Exception as e:
       LogError("Exception while reading server response to forwarded request: " + str(e))
       return
 
     try:
-      responseSymbols = json.loads(responseJson)[0]
+      if succeededVersion == 4:
+        responseKnownModules = responseJson['knownModules']
+        for newIndex, known in enumerate(responseKnownModules):
+          if known and newIndex in newIndexToOldIndex:
+            self.knownModules[newIndexToOldIndex[newIndex]] = True
+
+        responseSymbols = responseJson['symbolicatedStacks'][0]
+      else:
+        responseSymbols = responseJson[0]
       if len(responseSymbols) != len(stack):
         LogError(str(len(responseSymbols)) + " symbols in response, " + str(len(stack)) + " PCs in request!")
         return
@@ -258,6 +245,14 @@ class SymbolicationRequest:
     unresolvedModules = []
     stack = self.stacks[stackNum]
 
+    for moduleIndex, module in enumerate(self.combinedMemoryMap):
+      if not self.symFileManager.GetLibSymbolMap(module.libName, module.breakpadId, self.symbolSources):
+        missingSymFiles.append((module.libName, module.breakpadId))
+        if shouldForwardRequests:
+          unresolvedModules.append((moduleIndex, module))
+      else:
+        self.knownModules[moduleIndex] = True
+
     for entry in stack:
       pcIndex += 1
       moduleIndex = entry[0]
@@ -267,7 +262,6 @@ class SymbolicationRequest:
         continue
       module = self.combinedMemoryMap[moduleIndex]
 
-      # Don't look for a missing lib multiple times in one request
       if (module.libName, module.breakpadId) in missingSymFiles:
         if shouldForwardRequests:
           unresolvedIndexes.append(pcIndex)
@@ -279,21 +273,14 @@ class SymbolicationRequest:
       libSymbolMap = self.symFileManager.GetLibSymbolMap(module.libName,
                                                          module.breakpadId,
                                                          self.symbolSources)
-      if libSymbolMap:
-        functionName = libSymbolMap.Lookup(offset)
-      else:
-        if shouldForwardRequests:
-          unresolvedIndexes.append(pcIndex)
-          unresolvedStack.append(entry)
-          unresolvedModules.append(module)
-        missingSymFiles.append((module.libName, module.breakpadId))
+      functionName = libSymbolMap.Lookup(offset)
 
       if functionName == None:
         functionName = hex(offset)
       symbolicatedStack.append(functionName + " (in " + module.libName + ")")
 
     # Ask another server for help symbolicating unresolved addresses
-    if len(unresolvedStack) > 0:
+    if len(unresolvedStack) > 0 or len(unresolvedModules) > 0:
       self.ForwardRequest(unresolvedIndexes, unresolvedStack, unresolvedModules, symbolicatedStack)
 
     return symbolicatedStack

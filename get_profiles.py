@@ -39,12 +39,9 @@ gSymbolicationOptions = {
 
 parser = argparse.ArgumentParser(description='Process profiles in Tinderbox Talos logs.')
 
-parser.add_argument("-f", "--file", nargs="*", help="locally-saved log file")
-parser.add_argument("-o", "--out", help="output filename")
 parser.add_argument("-r", "--rev", nargs="+", help="tryserver revisions")
-parser.add_argument("-p", "--platform", choices=["snowleopard", "lion", "mountainlion", "winxp", "win7", "win8"], help="tryserver Talos platform")
-parser.add_argument("-t", "--test", choices=["tpaint", "ts_paint", "tart", "tresize"], help="name of the test")
-parser.add_argument("-rp", "--reflow-profile", help="specify to extract reflow profiles instead of SPS profiles", action="store_true")
+parser.add_argument("-p", "--platform", choices=["snowleopard", "lion", "mountainlion", "winxp", "win7", "win8", "linux", "linux64"], help="tryserver Talos platform")
+parser.add_argument("-t", "--test", choices=["tpaint", "ts_paint", "cart", "tart", "tresize", "tscrollx", "tsvgx", "tp5o", "tp5o_scroll", "sessionrestore", "glterrain", "kraken"], help="name of the test")
 parser.add_argument("-m", "--max", type=int, default=1000, help="maximum number of profiles")
 
 args = parser.parse_args()
@@ -58,73 +55,46 @@ def load_json_debug(s):
     LogMessage("Error loading JSON from string %s...%s" % (s[0:100], s[-100:]))
     raise e
 
-if args.file:
-  LogMessage("Loading profiles from files...")
-  profilestrings = []
-  for filename in args.file:
-    fin = open(filename, "r")
-    log = fin.read()
-    fin.close()
-    log_analyzer = taloslog.TalosLogAnalyzer(log)
-    if args.reflow_profile:
-      profilestrings_in_this_log = list(log_analyzer.get_reflow_profiles())
-    else:
-      profilestrings_in_this_log = list(log_analyzer.get_sps_profiles())
-    profilestrings += profilestrings_in_this_log
-    for system_lib_symbols_zip in log_analyzer.get_system_lib_symbols():
-      symbolicator.integrate_symbol_zip(system_lib_symbols_zip)
-  profiles = [json.loads(s) for s in profilestrings[0:args.max]]
-  if not profiles:
-    LogMessage("No profiles found.")
-    exit()
-  LogMessage("Extracted %d profiles." % len(profiles))
-  LogMessage("Filtering profiles...")
-  for profile in profiles:
-    sps.filter_measurements(profile, is_startup_test=(args.test[0:2]=="ts"))
-  LogMessage("Merging profiles...")
-  merged_profile = sps.merge_profiles(profiles)
-  sps.fixup_sample_data(merged_profile)
-  out_filename = args.out
-  sps.save_profile(merged_profile, out_filename)
-  LogMessage("Created {out_filename}.".format(out_filename=out_filename))
-  exit()
-
 for rev in args.rev:
   LogMessage("Listing Talos runs for try revision {rev}...".format(rev=rev))
   push = tryserver.TryserverPush(rev)
-  LogMessage("Downloading symbols...")
-  symbol_zip_file = push.get_build_symbols(args.platform)
-  if symbol_zip_file:
-    symbolicator.integrate_symbol_zip(symbol_zip_file)
-  LogMessage("Downloading logs and reading profiles...")
-  profilestrings = set()
-  for log in push.get_talos_testlogs(args.platform, args.test):
-    log_analyzer = taloslog.TalosLogAnalyzer(log)
-    if args.reflow_profile:
-      profilestrings_in_this_log = set(log_analyzer.get_reflow_profiles())
-    else:
-      profilestrings_in_this_log = set(log_analyzer.get_sps_profiles())
-    profilestrings |= profilestrings_in_this_log
-    for system_lib_symbols_zip in log_analyzer.get_system_lib_symbols():
-      symbolicator.integrate_symbol_zip(system_lib_symbols_zip)
-  try:
-    while len(profilestrings) > args.max:
-      profilestrings.pop()
-    profiles = [load_json_debug(s) for s in profilestrings]
-  except Exception as e:
-    exit();
+  LogMessage("Looking for build directory...")
+  dir = push.get_build_dir(args.platform)
+  LogMessage("Downloading profiles...")
+  profiles = {}
+  for talos_zip_url in push.find_talos_zips(args.platform, args.test):
+    for subtest, profile in push.get_talos_profiles(talos_zip_url):
+      profiles.setdefault(subtest, []).append(profile)
+  for subtest in profiles:
+    num_exceed_max = max(0, len(profiles[subtest]) - args.max)
+    if num_exceed_max > 0:
+      LogMessage("Discarding {num_exceed_max} profiles for subtest {subtest} due to --max restriction to {max} profiles.".format(num_exceed_max=num_exceed_max, subtest=subtest, max=args.max))
+    profiles[subtest] = profiles[subtest][0:args.max]
   if not profiles:
     LogMessage("No profiles found in any log for revision {rev}.".format(rev=rev))
     continue
-  LogMessage("Extracted %d profiles." % len(profiles))
-  LogMessage("Filtering profiles...")
-  for profile in profiles:
-    sps.filter_measurements(profile, is_startup_test=(args.test[0:2]=="ts"))
-  LogMessage("Symbolicating profiles...")
-  for profile in profiles:
-    symbolicator.symbolicate_profile(profile)
-  LogMessage("Merging profiles...")
-  merged_profile = sps.merge_profiles(profiles)
-  out_filename = "merged-profile-{test}-{platform}-{rev}.txt".format(rev=rev, platform=args.platform, test=args.test)
-  sps.save_profile(merged_profile, out_filename)
-  LogMessage("Created {out_filename}.".format(out_filename=out_filename))
+  symbolicate = True
+  if symbolicate:
+    LogMessage("Getting symbols...")
+    symbol_zip_url = push.get_build_symbols_url(dir)
+    if symbol_zip_url:
+      symbolicator.integrate_symbol_zip_from_url(symbol_zip_url)
+  for subtest, subtest_profiles in profiles.iteritems():
+    LogMessage("Parsing profiles for subtest {subtest}...".format(subtest=subtest))
+    try:
+      subtest_profiles = [s.get_json() for s in subtest_profiles]
+    except Exception as e:
+      exit();
+    LogMessage("Extracted {numprofiles} profiles for subtest {subtest}.".format(numprofiles=len(subtest_profiles), subtest=subtest))
+    if symbolicate:
+      LogMessage("Symbolicating profiles...")
+      for profile in subtest_profiles:
+        symbolicator.symbolicate_profile(profile)
+    LogMessage("Merging profiles...")
+    merged_profile = sps.merge_profiles(subtest_profiles)
+    LogMessage("Compressing merged profile...")
+    sps.compress_profile(merged_profile)
+    LogMessage("Saving merged profile...")
+    out_filename = "merged-profile-{subtest}-{test}-{platform}-{rev}.sps".format(rev=rev, platform=args.platform, test=args.test, subtest=subtest)
+    sps.save_profile(merged_profile, out_filename)
+    LogMessage("Created {out_filename}.".format(out_filename=out_filename))
