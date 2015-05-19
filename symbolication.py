@@ -22,7 +22,7 @@ class OSXSymbolDumper:
     if not os.path.exists(self.dump_syms_bin):
       raise Exception("No dump_syms_mac binary in this directory")
 
-  def store_symbols(self, lib_path, output_filename_without_extension):
+  def store_symbols(self, lib_path, expected_breakpad_id, output_filename_without_extension):
     """
     Returns the filename at which the .sym file was created, or None if no
     symbols were dumped.
@@ -41,14 +41,26 @@ class OSXSymbolDumper:
                               stderr=subprocess.PIPE)
       stdout, stderr = proc.communicate()
       if proc.returncode != 0:
-        return
+        return None
+
+      module = stdout.splitlines()[0]
+      bits = module.split(' ', 4)
+      if len(bits) != 5:
+        return None
+      _, platform, cpu_arch, actual_breakpad_id, debug_file = bits
+
+      if actual_breakpad_id != expected_breakpad_id:
+        return None
+
       f = open(output_filename, "w")
       f.write(stdout)
       f.close()
       return output_filename
 
     for arch in get_archs(lib_path):
-      return process_file(arch)
+      result = process_file(arch)
+      if result is not None:
+        return result
     return None
 
 class LinuxSymbolDumper:
@@ -57,7 +69,7 @@ class LinuxSymbolDumper:
     if not self.nm:
       raise Exception("Could not find nm, necessary for symbol dumping")
 
-  def store_symbols(self, lib_path, output_filename_without_extension):
+  def store_symbols(self, lib_path, breakpad_id, output_filename_without_extension):
     """
     Returns the filename at which the .sym file was created, or None if no
     symbols were dumped.
@@ -120,7 +132,7 @@ class ProfileSymbolicator:
   def integrate_symbol_zip_from_file(self, filename):
     if self.have_integrated(filename):
       return
-    f = open(filename, 'r')
+    f = open(filename, 'rb')
     zf = zipfile.ZipFile(f)
     self.integrate_symbol_zip(zf)
     f.close()
@@ -207,7 +219,7 @@ class ProfileSymbolicator:
       os.makedirs(store_path)
 
     # Dump the symbols.
-    sym_file = self.symbol_dumper.store_symbols(lib_path, output_filename_without_extension)
+    sym_file = self.symbol_dumper.store_symbols(lib_path, lib["breakpadId"], output_filename_without_extension)
     if sym_file:
       rootlen = len(os.path.join(output_dir, '_')) - 1
       output_filename = sym_file[rootlen:]
@@ -217,15 +229,51 @@ class ProfileSymbolicator:
   def symbolicate_profile(self, profile_json):
     if "libs" not in profile_json:
       return
+    if profile_json["meta"].get("version", 2) == 3:
+      self.symbolicate_profile_v3(profile_json)
+    else:
+      self.symbolicate_profile_v2(profile_json)
+    for i, thread in enumerate(profile_json["threads"]):
+      if isinstance(thread, basestring):
+        thread_json = json.loads(thread)
+        self.symbolicate_profile(thread_json)
+        profile_json["threads"][i] = json.dumps(thread_json)
+
+  def symbolicate_profile_v2(self, profile_json):
     shared_libraries = json.loads(profile_json["libs"])
     shared_libraries.sort(key=lambda lib: lib["start"])
-    addresses = self._find_addresses(profile_json)
+    addresses = self._find_addresses_v2(profile_json)
     symbols_to_resolve = self._assign_symbols_to_libraries(addresses, shared_libraries)
     symbolication_table = self._resolve_symbols(symbols_to_resolve)
-    #print symbols_to_resolve
-    self._substitute_symbols(profile_json, symbolication_table)
+    self._substitute_symbols_v2(profile_json, symbolication_table)
 
-  def _find_addresses(self, profile_json):
+  def symbolicate_profile_v3(self, profile_json):
+    shared_libraries = json.loads(profile_json["libs"])
+    shared_libraries.sort(key=lambda lib: lib["start"])
+    addresses = self._find_addresses_v3(profile_json)
+    symbols_to_resolve = self._assign_symbols_to_libraries(addresses, shared_libraries)
+    # print symbols_to_resolve
+    symbolication_table = self._resolve_symbols(symbols_to_resolve)
+    self._substitute_symbols_v3(profile_json, symbolication_table)
+
+  def _find_addresses_v3(self, profile_json):
+    addresses = set()
+    for thread in profile_json["threads"]:
+      if isinstance(thread, basestring):
+        continue
+      for s in thread["stringTable"]:
+        if s[0:2] == "0x":
+          addresses.add(s)
+    return addresses
+
+  def _substitute_symbols_v3(self, profile_json, symbolication_table):
+    for thread in profile_json["threads"]:
+      if isinstance(thread, basestring):
+        continue
+      for i, s in enumerate(thread["stringTable"]):
+        thread["stringTable"][i] = symbolication_table.get(s, s)
+
+  def _find_addresses_v2(self, profile_json):
     addresses = set()
     for thread in profile_json["threads"]:
       for sample in thread["samples"]:
@@ -286,7 +334,7 @@ class ProfileSymbolicator:
     symbolicated_stack = request.Symbolicate(0)
     return dict(zip(all_symbols, symbolicated_stack))
 
-  def _substitute_symbols(self, profile_json, symbolication_table):
+  def _substitute_symbols_v2(self, profile_json, symbolication_table):
     for thread in profile_json["threads"]:
       for sample in thread["samples"]:
         for frame in sample["frames"]:
@@ -298,6 +346,6 @@ class ProfileSymbolicator:
     f.close()
     self.dump_and_integrate_missing_symbols(profile, "missingsymbols.zip")
     self.symbolicate_profile(profile)
-    f = open(filename, "w")
+    f = open(filename + ".sym", "w")
     json.dump(profile, f)
     f.close()
