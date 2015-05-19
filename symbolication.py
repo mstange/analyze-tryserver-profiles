@@ -132,7 +132,7 @@ class ProfileSymbolicator:
   def integrate_symbol_zip_from_file(self, filename):
     if self.have_integrated(filename):
       return
-    f = open(filename, 'r')
+    f = open(filename, 'rb')
     zf = zipfile.ZipFile(f)
     self.integrate_symbol_zip(zf)
     f.close()
@@ -245,7 +245,6 @@ class ProfileSymbolicator:
     addresses = self._find_addresses_v2(profile_json)
     symbols_to_resolve = self._assign_symbols_to_libraries(addresses, shared_libraries)
     symbolication_table = self._resolve_symbols(symbols_to_resolve)
-    #print symbols_to_resolve
     self._substitute_symbols_v2(profile_json, symbolication_table)
 
   def symbolicate_profile_v3(self, profile_json):
@@ -323,7 +322,7 @@ class ProfileSymbolicator:
       lib = library_with_symbols["library"]
       symbols = library_with_symbols["symbols"]
       memoryMap.append(self._module_from_lib(lib))
-      all_symbols += symbols;
+      all_symbols += symbols
       for symbol in symbols:
         processedStack.append([moduleIndex, int(symbol, 0) - lib["start"]])
 
