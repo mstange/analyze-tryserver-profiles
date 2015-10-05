@@ -42,7 +42,7 @@ gSymbolicationOptions = {
 
 symbolicator = symbolication.ProfileSymbolicator(gSymbolicationOptions)
 
-reLibraryListLine = re.compile("^\\s*(?P<load_address>0x[0-9a-f]+)\\s*\\-\\s*(?P<end_address>0x[0-9a-f]+)\\s+\\+?(?P<lib_longname>\\b.*)\\s+\\<(?P<lib_id>[0-9a-fA-F\\-]+)>\\s+(?P<lib_path>.*)$", re.DOTALL)
+reLibraryListLine = re.compile("^\\s*\\*?(?P<load_address>0x[0-9a-f]+)\\s*\\-\\s*(?P<end_address>0x[0-9a-f]+)\\s+\\+?(?P<lib_longname>\\b.*)\\s+\\<(?P<lib_id>[0-9a-fA-F\\-]+)>\\s+(?P<lib_path>.*)$", re.DOTALL)
 reStackLine1 = re.compile("^(?P<before_symbol>.*)\\?\\?\\?.*load address (?P<load_address>0x[0-9a-f]+) \\+ (?P<relative_frame_address>0x[0-9a-f]+)\\s.*\\[(?P<absolute_frame_address>0x[0-9a-f]+)\\].*$", re.DOTALL)
 reStackLine2 = re.compile("^(?P<before_symbol>.*)\\?\\?\\? \\((?P<lib_name>.*) \\+ (?P<relative_frame_address>[0-9]+)\\)\\s.*\\[(?P<absolute_frame_address>0x[0-9a-f]+)\\].*$", re.DOTALL)
 
@@ -60,7 +60,10 @@ def process_one_process():
   lib_name_to_module_index = {}
 
   found_lib_list = False
-  for line in inputsample:
+  while True:
+    line = inputsample.readline()
+    if not line:
+      break
     match = reLibraryListLine.match(line)
     if match:
       found_lib_list = True
@@ -74,17 +77,16 @@ def process_one_process():
       modules.append([lib_name, convert_libid(match.group("lib_id"))])
       load_addresses.append(load_address)
     elif found_lib_list:
-      input_end = inputsample.tell()
       break
-  inputsample.seek(input_start)
 
-  if not found_lib_list:
-    return False
+  input_end = inputsample.tell()
+  inputsample.seek(input_start)
 
   # print modules
 
-  for line in inputsample:
-    if inputsample.tell() >= input_end:
+  while inputsample.tell() < input_end:
+    line = inputsample.readline()
+    if not line:
       break
     match = reStackLine1.match(line)
     if match and match.group("load_address") in load_address_to_module_index:
@@ -106,8 +108,9 @@ def process_one_process():
   symbolicated_stack = request.Symbolicate(0)
 
   i = 0
-  for line in inputsample:
-    if inputsample.tell() >= input_end:
+  while inputsample.tell() < input_end:
+    line = inputsample.readline()
+    if not line:
       break
     match = reStackLine1.match(line)
     if match and match.group("load_address") in load_address_to_module_index:
@@ -121,7 +124,8 @@ def process_one_process():
       continue
     outputsample.write(line)
 
-  return True
+  inputsample.seek(input_end)
+  return found_lib_list
 
 while process_one_process():
   pass
