@@ -132,8 +132,6 @@ def process_one_process():
       continue
     match = reStackLine3.match(line)
     if match and match.group("lib_name") in lib_name_to_module_index:
-      module_index = lib_name_to_module_index[match.group("lib_name")]
-      relative_frame_address = int(match.group("absolute_frame_address"), 0) - int(load_addresses[module_index], 0)
       if symbolicated_stack[i][0:2] != "0x":
         outputsample.write(match.group("before_symbol") + symbolicated_stack[i] + " [%s]\n" % match.group("absolute_frame_address"))
       else:
