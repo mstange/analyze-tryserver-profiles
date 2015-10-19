@@ -42,10 +42,10 @@ gSymbolicationOptions = {
 
 symbolicator = symbolication.ProfileSymbolicator(gSymbolicationOptions)
 
-reLibraryListLine = re.compile("^\\s*\\*?(?P<load_address>0x[0-9a-f]+)\\s*\\-\\s*(?P<end_address>0x[0-9a-f]+)\\s+\\+?(?P<lib_longname>\\b.*)\\s+\\<(?P<lib_id>[0-9a-fA-F\\-]+)>\\s+(?P<lib_path>.*)$", re.DOTALL)
-reStackLine1 = re.compile("^(?P<before_symbol>.*)\\?\\?\\?.*load address (?P<load_address>0x[0-9a-f]+) \\+ (?P<relative_frame_address>0x[0-9a-f]+)\\s.*\\[(?P<absolute_frame_address>0x[0-9a-f]+)\\].*$", re.DOTALL)
-reStackLine2 = re.compile("^(?P<before_symbol>.*)\\?\\?\\? \\((?P<lib_name>.*) \\+ (?P<relative_frame_address>[0-9]+)\\)\\s.*\\[(?P<absolute_frame_address>0x[0-9a-f]+)\\].*$", re.DOTALL)
-reStackLine3 = re.compile("^(?P<before_symbol>.*[0-9]+ )(?P<original_symbol>.*) \\(in (?P<lib_name>.*)\\) \\+ (?P<relative_frame_address>[0-9]+)\\s.*\\[(?P<absolute_frame_address>0x[0-9a-f]+)\\].*$", re.DOTALL)
+reLibraryListLine = re.compile(r"^\s*\*?(?P<load_address>0x[0-9a-f]+)\s*\-\s*(?P<end_address>0x[0-9a-f]+)\s+\+?(?P<lib_longname>\b.*)\s+\<(?P<lib_id>[0-9a-fA-F\-]+)>\s+(?P<lib_path>.*)$", re.DOTALL)
+reStackLine1 = re.compile(r"^(?P<before_symbol>.*)\?\?\?.*load address (?P<load_address>0x[0-9a-f]+) \+ (?P<relative_frame_address>0x[0-9a-f]+)\s.*\[(?P<absolute_frame_address>0x[0-9a-f]+)\].*$", re.DOTALL)
+reStackLine2 = re.compile(r"^(?P<before_symbol>.*)\?\?\? \((?P<lib_name>.*) \+ (?P<relative_frame_address>[0-9]+)\)\s.*\[(?P<absolute_frame_address>0x[0-9a-f]+)\].*$", re.DOTALL)
+reStackLine3 = re.compile(r"^(?P<before_symbol>.*[0-9]+ )(?P<original_symbol>.*) \(in (?P<lib_name>.*)\) \+ (?P<relative_frame_address>[0-9]+)\s.*\[(?P<absolute_frame_address>0x[0-9a-f]+)\].*$", re.DOTALL)
 
 def convert_libid(lib_id):
   return lib_id.replace("-", "") + "0"
