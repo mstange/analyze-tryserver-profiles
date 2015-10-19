@@ -45,6 +45,7 @@ symbolicator = symbolication.ProfileSymbolicator(gSymbolicationOptions)
 reLibraryListLine = re.compile("^\\s*\\*?(?P<load_address>0x[0-9a-f]+)\\s*\\-\\s*(?P<end_address>0x[0-9a-f]+)\\s+\\+?(?P<lib_longname>\\b.*)\\s+\\<(?P<lib_id>[0-9a-fA-F\\-]+)>\\s+(?P<lib_path>.*)$", re.DOTALL)
 reStackLine1 = re.compile("^(?P<before_symbol>.*)\\?\\?\\?.*load address (?P<load_address>0x[0-9a-f]+) \\+ (?P<relative_frame_address>0x[0-9a-f]+)\\s.*\\[(?P<absolute_frame_address>0x[0-9a-f]+)\\].*$", re.DOTALL)
 reStackLine2 = re.compile("^(?P<before_symbol>.*)\\?\\?\\? \\((?P<lib_name>.*) \\+ (?P<relative_frame_address>[0-9]+)\\)\\s.*\\[(?P<absolute_frame_address>0x[0-9a-f]+)\\].*$", re.DOTALL)
+reStackLine3 = re.compile("^(?P<before_symbol>.*[0-9]+ )(?P<original_symbol>.*) \\(in (?P<lib_name>.*)\\) \\+ (?P<relative_frame_address>[0-9]+)\\s.*\\[(?P<absolute_frame_address>0x[0-9a-f]+)\\].*$", re.DOTALL)
 
 def convert_libid(lib_id):
   return lib_id.replace("-", "") + "0"
@@ -99,9 +100,16 @@ def process_one_process():
       relative_frame_address = int(match.group("absolute_frame_address"), 0) - int(load_addresses[module_index], 0)
       stack.append([module_index, relative_frame_address])
       continue
+    match = reStackLine3.match(line)
+    if match and match.group("lib_name") in lib_name_to_module_index:
+      module_index = lib_name_to_module_index[match.group("lib_name")]
+      relative_frame_address = int(match.group("absolute_frame_address"), 0) - int(load_addresses[module_index], 0)
+      stack.append([module_index, relative_frame_address])
+      continue
   inputsample.seek(input_start)
 
   # print stack
+  # print modules
 
   rawRequest = { "stacks": [stack], "memoryMap": modules, "version": 4, "symbolSources": ["firefox"] }
   request = SymbolicationRequest(symbolicator.sym_file_manager, rawRequest)
@@ -120,6 +128,16 @@ def process_one_process():
     match = reStackLine2.match(line)
     if match and match.group("lib_name") in lib_name_to_module_index:
       outputsample.write(match.group("before_symbol") + symbolicated_stack[i] + " [%s]\n" % match.group("absolute_frame_address"))
+      i = i + 1
+      continue
+    match = reStackLine3.match(line)
+    if match and match.group("lib_name") in lib_name_to_module_index:
+      module_index = lib_name_to_module_index[match.group("lib_name")]
+      relative_frame_address = int(match.group("absolute_frame_address"), 0) - int(load_addresses[module_index], 0)
+      if symbolicated_stack[i][0:2] != "0x":
+        outputsample.write(match.group("before_symbol") + symbolicated_stack[i] + " [%s]\n" % match.group("absolute_frame_address"))
+      else:
+        outputsample.write(line)
       i = i + 1
       continue
     outputsample.write(line)
