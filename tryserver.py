@@ -6,7 +6,7 @@ import StringIO
 import cStringIO
 import gzip
 import zipfile
-from logging import LogTrace, LogError, LogMessage, SetTracingEnabled
+from symLogging import LogTrace, LogError, LogMessage, SetTracingEnabled
 
 class FileInZip:
   def __init__(self, zf, filename):
