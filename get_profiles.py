@@ -5,7 +5,7 @@ import symbolication
 import tryserver
 import taloslog
 import sps
-from logging import LogTrace, LogError, LogMessage, SetTracingEnabled
+from symLogging import LogTrace, LogError, LogMessage, SetTracingEnabled
 
 # Snappy symbolication server optinos
 gSymbolicationOptions = {

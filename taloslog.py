@@ -5,7 +5,7 @@ import zlib
 import re
 import zipfile
 import tempfile
-from logging import LogTrace, LogError, LogMessage, SetTracingEnabled
+from symLogging import LogTrace, LogError, LogMessage, SetTracingEnabled
 
 
 gSPSProfileStringRE = re.compile("Begin SPS Profile:.{0,100}?data:text/x-sps_profile;base64,(.*?)(End SPS Profile.|Begin |DEBUG|$)", re.DOTALL)

@@ -8,7 +8,7 @@ import argparse
 import urllib2
 import StringIO
 import gzip
-from logging import LogTrace, LogError, LogMessage, SetTracingEnabled
+from symLogging import LogTrace, LogError, LogMessage, SetTracingEnabled
 import sps
 
 def read_file(filename):
