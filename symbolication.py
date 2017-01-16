@@ -16,6 +16,28 @@ from symFileManager import SymFileManager
 from symbolicationRequest import SymbolicationRequest
 from symLogging import LogMessage
 
+def dump_symbols_for_lib(pdbName, breakpadId, path, output_dir, symbol_dumper):
+  if not os.path.exists(path):
+    return None
+  output_filename_without_extension = os.path.join(output_dir, pdbName, breakpadId, pdbName)
+  output_dir = os.path.dirname(output_filename_without_extension)
+  if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+  return symbol_dumper.store_symbols(path, breakpadId, output_filename_without_extension)
+
+def get_symbol_dumper():
+  try:
+    if platform.system() == "Darwin":
+      return OSXSymbolDumper()
+  except:
+    pass
+  try:
+    if platform.system() == "Linux":
+      return LinuxSymbolDumper()
+  except:
+    pass
+  return None
+
 class OSXSymbolDumper:
   def __init__(self):
     self.dump_syms_bin = os.path.join(os.path.dirname(__file__), 'dump_syms_mac')
@@ -102,20 +124,7 @@ class ProfileSymbolicator:
   def __init__(self, options):
     self.options = options
     self.sym_file_manager = SymFileManager(self.options)
-    self.symbol_dumper = self.get_symbol_dumper()
-
-  def get_symbol_dumper(self):
-    try:
-      if platform.system() == "Darwin":
-        return OSXSymbolDumper()
-    except:
-      pass
-    try:
-      if platform.system() == "Linux":
-        return LinuxSymbolDumper()
-    except:
-      pass
-    return None
+    self.symbol_dumper = get_symbol_dumper()
 
   def integrate_symbol_zip_from_url(self, symbol_zip_url):
     if self.have_integrated(symbol_zip_url):
@@ -200,6 +209,7 @@ class ProfileSymbolicator:
 
   def dump_and_integrate_symbols_for_lib(self, lib, output_dir, zip):
     [name, breakpadId] = self._module_from_lib(lib)
+
     expected_name_without_extension = os.path.join(name, breakpadId, name)
     for extension in [".sym", ".nmsym"]:
       expected_name = expected_name_without_extension + extension
@@ -209,17 +219,8 @@ class ProfileSymbolicator:
         zip.extract(expected_name, output_dir)
         return
 
-    lib_path = lib['name']
-    if not os.path.exists(lib_path):
-      return
-
-    output_filename_without_extension = os.path.join(output_dir, expected_name_without_extension)
-    store_path = os.path.dirname(output_filename_without_extension)
-    if not os.path.exists(store_path):
-      os.makedirs(store_path)
-
     # Dump the symbols.
-    sym_file = self.symbol_dumper.store_symbols(lib_path, lib["breakpadId"], output_filename_without_extension)
+    sym_file = dump_symbols_for_lib(name, lib["breakpadId"], lib['name'], output_dir, self.symbol_dumper)
     if sym_file:
       rootlen = len(os.path.join(output_dir, '_')) - 1
       output_filename = sym_file[rootlen:]
