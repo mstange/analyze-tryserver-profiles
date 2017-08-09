@@ -97,6 +97,8 @@ for module in raw_dump['modules']:
     pdbName = module['debug_file']
     breakpadID = module['debug_id']
     local_module = local_modules.get(pdbName)
+    if local_module is None:
+      continue
     if local_module['breakpadID'] == breakpadID:
       print pdbName + ' is stored at ' + local_module['path']
       symbolication.dump_symbols_for_lib(pdbName, breakpadID, local_module['path'], gSymbolicationOptions["symbolPaths"]["FIREFOX"], symbol_dumper)
@@ -137,8 +139,8 @@ for thread in raw_dump['threads']:
       frame['normalized'] = symbolicated_stack[i]
       i += 1
 
-for thread in raw_dump['threads']:
-  print 'Printing thread'
+for threadIndex, thread in enumerate(raw_dump['threads']):
+  print 'Thread #%d' % threadIndex
   for frameIndex, frame in enumerate(thread['frames']):
     print '#%d %s' % (frameIndex, frame.get('normalized', frame.get('function', frame.get('module_offset', '<Unknown>'))))
   print ''

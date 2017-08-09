@@ -42,10 +42,11 @@ gSymbolicationOptions = {
 
 symbolicator = symbolication.ProfileSymbolicator(gSymbolicationOptions)
 
-reLibraryListLine = re.compile(r"^\s*\*?(?P<load_address>0x[0-9a-f]+)\s*\-\s*(?P<end_address>0x[0-9a-f]+)\s+\+?(?P<lib_longname>\b.*)\s+\<(?P<lib_id>[0-9a-fA-F\-]+)>\s+(?P<lib_path>.*)$", re.DOTALL)
-reStackLine1 = re.compile(r"^(?P<before_symbol>.*)\?\?\?.*load address (?P<load_address>0x[0-9a-f]+) \+ (?P<relative_frame_address>0x[0-9a-f]+)\s.*\[(?P<absolute_frame_address>0x[0-9a-f]+)\].*$", re.DOTALL)
-reStackLine2 = re.compile(r"^(?P<before_symbol>.*)\?\?\? \((?P<lib_name>.*) \+ (?P<relative_frame_address>[0-9]+)\)\s.*\[(?P<absolute_frame_address>0x[0-9a-f]+)\].*$", re.DOTALL)
-reStackLine3 = re.compile(r"^(?P<before_symbol>.*[0-9]+ )(?P<original_symbol>.*) \(in (?P<lib_name>.*)\) \+ (?P<relative_frame_address>[0-9]+)\s.*\[(?P<absolute_frame_address>0x[0-9a-f]+)\].*$", re.DOTALL)
+reLibraryListLine1 = re.compile(r"^\s*\*?(?P<load_address>0x[0-9a-f]+)\s*\-\s*(?P<end_address>0x[0-9a-f]+)\s+\+?(?P<lib_longname>\b.*)\s+\<(?P<lib_id>[0-9a-fA-F\-]+)>\s+(?P<lib_path>.*)$", re.DOTALL)
+reLibraryListLine2 = re.compile(r"^\s*\*?(?P<load_address>0x[0-9a-f]+)\s*\-\s*\?\?\?\s+\?\?\?\s+\<(?P<lib_id>[0-9a-fA-F\-]+)>", re.DOTALL)
+reStackLine1 = re.compile(r"^(?P<before_symbol>.*)\?\?\?.*load address (?P<load_address>0x[0-9a-f]+) \+ (?P<relative_frame_address>0x[0-9a-f]+)\s.*\[(?P<absolute_frame_address>0x[0-9a-f]+)\]", re.DOTALL)
+reStackLine2 = re.compile(r"^(?P<before_symbol>.*)\?\?\? \((?P<lib_name>.*) \+ (?P<relative_frame_address>[0-9]+)\)\s.*\[(?P<absolute_frame_address>0x[0-9a-f]+)\]", re.DOTALL)
+reStackLine3 = re.compile(r"^(?P<before_symbol>.*[0-9]+ )(?P<original_symbol>.*) \(in (?P<lib_name>.*)\) \+ (?P<relative_frame_address>[0-9]+)\s.*\[(?P<absolute_frame_address>0x[0-9a-f]+)\]", re.DOTALL)
 
 def convert_libid(lib_id):
   return lib_id.replace("-", "") + "0"
@@ -65,7 +66,7 @@ def process_one_process():
     line = inputsample.readline()
     if not line:
       break
-    match = reLibraryListLine.match(line)
+    match = reLibraryListLine1.match(line)
     if match:
       found_lib_list = True
       module_index = len(modules)
@@ -77,7 +78,18 @@ def process_one_process():
       lib_name_to_module_index[lib_name] = module_index
       modules.append([lib_name, convert_libid(match.group("lib_id"))])
       load_addresses.append(load_address)
-    elif found_lib_list:
+    else:
+      match = reLibraryListLine2.match(line)
+      if match:
+        found_lib_list = True
+        module_index = len(modules)
+        load_address = match.group("load_address")
+        lib_id = match.group("lib_id")
+        lib_name_to_module_index["<" + lib_id + ">"] = module_index
+        modules.append(["XUL", convert_libid(lib_id)])
+        load_addresses.append(load_address)
+
+    if found_lib_list and not match:
       break
 
   input_end = inputsample.tell()
@@ -95,11 +107,13 @@ def process_one_process():
       stack.append([module_index, int(match.group("relative_frame_address"), 0)])
       continue
     match = reStackLine2.match(line)
-    if match and match.group("lib_name") in lib_name_to_module_index:
-      module_index = lib_name_to_module_index[match.group("lib_name")]
-      relative_frame_address = int(match.group("absolute_frame_address"), 0) - int(load_addresses[module_index], 0)
-      stack.append([module_index, relative_frame_address])
-      continue
+    if match:
+      if match.group("lib_name") in lib_name_to_module_index:
+        module_index = lib_name_to_module_index[match.group("lib_name")]
+        relative_frame_address = int(match.group("absolute_frame_address"), 0) - int(load_addresses[module_index], 0)
+        stack.append([module_index, relative_frame_address])
+        continue
+      print "don't know lib", match.group("lib_name")
     match = reStackLine3.match(line)
     if match and match.group("lib_name") in lib_name_to_module_index:
       module_index = lib_name_to_module_index[match.group("lib_name")]
@@ -122,12 +136,18 @@ def process_one_process():
       break
     match = reStackLine1.match(line)
     if match and match.group("load_address") in load_address_to_module_index:
-      outputsample.write(match.group("before_symbol") + symbolicated_stack[i] + " [%s]\n" % match.group("absolute_frame_address"))
+      if symbolicated_stack[i][0:2] != "0x":
+        outputsample.write(match.group("before_symbol") + symbolicated_stack[i] + " [%s]\n" % match.group("absolute_frame_address"))
+      else:
+        outputsample.write(line)
       i = i + 1
       continue
     match = reStackLine2.match(line)
     if match and match.group("lib_name") in lib_name_to_module_index:
-      outputsample.write(match.group("before_symbol") + symbolicated_stack[i] + " [%s]\n" % match.group("absolute_frame_address"))
+      if symbolicated_stack[i][0:2] != "0x":
+        outputsample.write(match.group("before_symbol") + symbolicated_stack[i] + " [%s]\n" % match.group("absolute_frame_address"))
+      else:
+        outputsample.write(line)
       i = i + 1
       continue
     match = reStackLine3.match(line)
