@@ -12,7 +12,7 @@ gSymbolicationOptions = {
   # Trace-level logging (verbose)
   "enableTracing": 0,
   # Fallback server if symbol is not found locally
-  "remoteSymbolServer": "http://symbolapi.mocotoolsstaging.net/",
+  "remoteSymbolServer": "http://symbolapi.mozilla.org/",
   # Maximum number of symbol files to keep in memory
   "maxCacheEntries": 2000000,
   # Frequency of checking for recent symbols to cache (in hours)
