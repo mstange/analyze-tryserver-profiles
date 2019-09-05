@@ -10,8 +10,8 @@ from bs4 import BeautifulSoup
 import re
 import json
 
-crashreportID = '9433e825-9497-4255-af10-f5b852161215'
-inputsample = open('/Users/mstange/Downloads/nightlysample.txt', 'r')
+crashreportID = '80b5e83c-bb2b-4f85-b44a-400ad0190830'
+inputsample = open('/Users/mozilla/Downloads/nightlysample.txt', 'r')
 
 def get_raw_dump(reportID):
   url = 'https://crash-stats.mozilla.com/report/index/' + reportID
@@ -74,43 +74,49 @@ def parse_module_list(inputsample):
         continue
       breakpadID = convert_libid(match.group("lib_id"))
       modules[lib_name] = {
-        'pdbName': lib_name,
-        'breakpadID': breakpadID,
-        'path': match.group("lib_path").strip()
+        'debugName': lib_name,
+        'breakpadId': breakpadID,
+        'path': match.group("lib_path").strip(),
+        'debugPath': match.group("lib_path").strip(),
+        'arch': 'x86_64'
       }
     elif found_lib_list:
       break
   return modules
 
 local_modules = parse_module_list(inputsample)
+local_modules['AMDRadeonX4000GLDriver'] = {
+  'debugName': 'AMDRadeonX4000GLDriver',
+  'breakpadId': '62E5A997DD6937BFB6192B117EF4E39D0',
+  'path': '/System/Library/Extensions/AMDRadeonX4000GLDriver.bundle/Contents/MacOS/AMDRadeonX4000GLDriver',
+  'debugPath': '/System/Library/Extensions/AMDRadeonX4000GLDriver.bundle/Contents/MacOS/AMDRadeonX4000GLDriver',
+  'arch': 'x86_64h'
+}
 inputsample.close()
 
 raw_dump = get_raw_dump(crashreportID)
-
-symbol_dumper = symbolication.get_symbol_dumper()
 
 modules_for_symbolication = []
 module_name_to_index = {}
 
 for module in raw_dump['modules']:
   if module.get('missing_symbols', False):
-    pdbName = module['debug_file']
+    debugName = module['debug_file']
     breakpadID = module['debug_id']
-    local_module = local_modules.get(pdbName)
+    local_module = local_modules.get(debugName)
     if local_module is None:
       continue
-    if local_module['breakpadID'] == breakpadID:
-      print pdbName + ' is stored at ' + local_module['path']
-      symbolication.dump_symbols_for_lib(pdbName, breakpadID, local_module['path'], gSymbolicationOptions["symbolPaths"]["FIREFOX"], symbol_dumper)
+    if local_module['breakpadId'] == breakpadID:
+      print debugName + ' is stored at ' + local_module['path']
     else:
-      print 'I do not have a local version of ' + pdbName
+      print 'I do not have a local version of ' + debugName
       print 'assuming it matches my local binary, and overwriting.'
-      breakpadID = local_module['breakpadID']
-      module['debug_id'] = local_module['breakpadID']
-      symbolication.dump_symbols_for_lib(pdbName, breakpadID, local_module['path'], gSymbolicationOptions["symbolPaths"]["FIREFOX"], symbol_dumper)
+      breakpadID = local_module['breakpadId']
+      module['debug_id'] = local_module['breakpadId']
+    symbolicator.dump_symbols_for_lib(local_module, gSymbolicationOptions["symbolPaths"]["FIREFOX"])
     module_index = len(modules_for_symbolication)
-    modules_for_symbolication.append([pdbName, breakpadID])
-    module_name_to_index[pdbName] = module_index
+    modules_for_symbolication.append([debugName, breakpadID])
+    module_name_to_index[debugName] = module_index
 
 # print modules_for_symbolication
 
@@ -146,102 +152,3 @@ for threadIndex, thread in enumerate(raw_dump['threads']):
   print ''
 
 exit()
-
-def process_one_process():
-  input_start = inputsample.tell()
-  input_end = -1
-
-  modules = []
-  load_addresses = []
-  stack = []
-  load_address_to_module_index = {}
-  lib_name_to_module_index = {}
-
-  found_lib_list = False
-  while True:
-    line = inputsample.readline()
-    if not line:
-      break
-    match = reLibraryListLine.match(line)
-    if match:
-      found_lib_list = True
-      module_index = len(modules)
-      load_address = match.group("load_address")
-      lib_name = os.path.basename(match.group("lib_path").strip())
-      if " " in lib_name:
-        continue
-      load_address_to_module_index[load_address] = module_index
-      lib_name_to_module_index[lib_name] = module_index
-      modules.append([lib_name, convert_libid(match.group("lib_id"))])
-      load_addresses.append(load_address)
-    elif found_lib_list:
-      break
-
-  input_end = inputsample.tell()
-  inputsample.seek(input_start)
-
-  # print modules
-
-  while inputsample.tell() < input_end:
-    line = inputsample.readline()
-    if not line:
-      break
-    match = reStackLine1.match(line)
-    if match and match.group("load_address") in load_address_to_module_index:
-      module_index = load_address_to_module_index[match.group("load_address")]
-      stack.append([module_index, int(match.group("relative_frame_address"), 0)])
-      continue
-    match = reStackLine2.match(line)
-    if match and match.group("lib_name") in lib_name_to_module_index:
-      module_index = lib_name_to_module_index[match.group("lib_name")]
-      relative_frame_address = int(match.group("absolute_frame_address"), 0) - int(load_addresses[module_index], 0)
-      stack.append([module_index, relative_frame_address])
-      continue
-    match = reStackLine3.match(line)
-    if match and match.group("lib_name") in lib_name_to_module_index:
-      module_index = lib_name_to_module_index[match.group("lib_name")]
-      relative_frame_address = int(match.group("absolute_frame_address"), 0) - int(load_addresses[module_index], 0)
-      stack.append([module_index, relative_frame_address])
-      continue
-  inputsample.seek(input_start)
-
-  # print stack
-  # print modules
-
-  rawRequest = { "stacks": [stack], "memoryMap": modules, "version": 4, "symbolSources": ["firefox"] }
-  request = SymbolicationRequest(symbolicator.sym_file_manager, rawRequest)
-  symbolicated_stack = request.Symbolicate(0)
-
-  i = 0
-  while inputsample.tell() < input_end:
-    line = inputsample.readline()
-    if not line:
-      break
-    match = reStackLine1.match(line)
-    if match and match.group("load_address") in load_address_to_module_index:
-      outputsample.write(match.group("before_symbol") + symbolicated_stack[i] + " [%s]\n" % match.group("absolute_frame_address"))
-      i = i + 1
-      continue
-    match = reStackLine2.match(line)
-    if match and match.group("lib_name") in lib_name_to_module_index:
-      outputsample.write(match.group("before_symbol") + symbolicated_stack[i] + " [%s]\n" % match.group("absolute_frame_address"))
-      i = i + 1
-      continue
-    match = reStackLine3.match(line)
-    if match and match.group("lib_name") in lib_name_to_module_index:
-      if symbolicated_stack[i][0:2] != "0x":
-        outputsample.write(match.group("before_symbol") + symbolicated_stack[i] + " [%s]\n" % match.group("absolute_frame_address"))
-      else:
-        outputsample.write(line)
-      i = i + 1
-      continue
-    outputsample.write(line)
-
-  inputsample.seek(input_end)
-  return found_lib_list
-
-while process_one_process():
-  pass
-
-inputsample.close()
-outputsample.close()

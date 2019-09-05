@@ -208,6 +208,25 @@ class ProfileSymbolicator:
             for lib in unknown_modules:
                 self.dump_and_integrate_symbols_for_lib(lib, output_dir, zf)
 
+    def dump_symbols_for_lib(self, lib, output_dir):
+        name = lib["debugName"]
+        expected_name_without_extension = os.path.join(name, lib["breakpadId"], name)
+
+        lib_path = lib["debugPath"]
+        if not os.path.exists(lib_path):
+            return
+
+        output_filename_without_extension = os.path.join(
+            output_dir, expected_name_without_extension)
+        store_path = os.path.dirname(output_filename_without_extension)
+        if not os.path.exists(store_path):
+            os.makedirs(store_path)
+
+        # Dump the symbols.
+        sym_file = self.symbol_dumper.store_symbols(
+            lib_path, lib["breakpadId"], lib["arch"],
+            output_filename_without_extension)
+
     def dump_and_integrate_symbols_for_lib(self, lib, output_dir, zip):
         name = lib["debugName"]
         expected_name_without_extension = os.path.join(name, lib["breakpadId"], name)
