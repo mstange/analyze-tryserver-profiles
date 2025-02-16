@@ -1,10 +1,6 @@
-
 import os
 import symbolication
-import urllib2
-import cStringIO
-import zipfile
-from symFileManager import SymFileManager
+from urllib.request import urlopen
 from symbolicationRequest import SymbolicationRequest
 from bs4 import BeautifulSoup
 import re
@@ -15,7 +11,7 @@ inputsample = open('/Users/mozilla/Downloads/.txt', 'r')
 
 def get_raw_dump(reportID):
   url = 'https://crash-stats.mozilla.com/report/index/' + reportID
-  page = urllib2.urlopen(url)
+  page = urlopen(url)
   soup = BeautifulSoup(page, 'html.parser')
   return json.loads(soup.select_one('#rawdump > .code').string)
 
@@ -107,18 +103,16 @@ for module in raw_dump['modules']:
     if local_module is None:
       continue
     if local_module['breakpadId'] == breakpadID:
-      print debugName + ' is stored at ' + local_module['path']
+      print(debugName + ' is stored at ' + local_module['path'])
     else:
-      print 'I do not have a local version of ' + debugName
-      print 'assuming it matches my local binary, and overwriting.'
+      print('I do not have a local version of ' + debugName)
+      print('assuming it matches my local binary, and overwriting.')
       breakpadID = local_module['breakpadId']
       module['debug_id'] = local_module['breakpadId']
     symbolicator.dump_symbols_for_lib(local_module, gSymbolicationOptions["symbolPaths"]["FIREFOX"])
     module_index = len(modules_for_symbolication)
     modules_for_symbolication.append([debugName, breakpadID])
     module_name_to_index[debugName] = module_index
-
-# print modules_for_symbolication
 
 stack = []
 
@@ -128,13 +122,9 @@ for thread in raw_dump['threads']:
     if module_name is not None and module_name_to_index.get(module_name) is not None:
       stack.append([module_name_to_index.get(module_name), int(frame['module_offset'], 0)])
 
-# print stack
-
 rawRequest = { "stacks": [stack], "memoryMap": modules_for_symbolication, "version": 4, "symbolSources": ["firefox"] }
 request = SymbolicationRequest(symbolicator.sym_file_manager, rawRequest)
 symbolicated_stack = request.Symbolicate(0)
-
-# print symbolicated_stack
 
 i = 0
 
@@ -146,9 +136,9 @@ for thread in raw_dump['threads']:
       i += 1
 
 for threadIndex, thread in enumerate(raw_dump['threads']):
-  print 'Thread #%d' % threadIndex
+  print('Thread #%d' % threadIndex)
   for frameIndex, frame in enumerate(thread['frames']):
-    print '#%d %s' % (frameIndex, frame.get('normalized', frame.get('function', frame.get('module_offset', '<Unknown>'))))
-  print ''
+    print('#%d %s' % (frameIndex, frame.get('normalized', frame.get('function', frame.get('module_offset', '<Unknown>')))))
+  print('')
 
 exit()
