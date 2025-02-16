@@ -2,29 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import cStringIO
 import hashlib
 import json
 import os
 import platform
 import subprocess
-import urllib2
-import zipfile
-from distutils import spawn
+from shutil import which
 from symFileManager import SymFileManager
 from symbolicationRequest import SymbolicationRequest
-from symLogging import LogMessage
-
-"""
-Symbolication is broken when using type 'str' in python 2.7, so we use 'basestring'.
-But for python 3.0 compatibility, 'basestring' isn't defined, but the 'str' type works.
-So we force 'basestring' to 'str'.
-"""
-try:
-    basestring
-except NameError:
-    basestring = str
-
 
 class SymbolError(Exception):
     pass
@@ -54,6 +39,7 @@ class OSXSymbolDumper:
         if proc.returncode != 0:
             return None
 
+        stdout = stdout.decode()
         module = stdout.splitlines()[0]
         bits = module.split(' ', 4)
         if len(bits) != 5:
@@ -71,7 +57,7 @@ class OSXSymbolDumper:
 class LinuxSymbolDumper:
 
     def __init__(self):
-        self.nm = spawn.find_executable("nm")
+        self.nm = which("nm")
         if not self.nm:
             raise SymbolError(
                 "Could not find nm, necessary for symbol dumping")
@@ -123,29 +109,6 @@ class ProfileSymbolicator:
         except SymbolError:
             return None
 
-    def integrate_symbol_zip_from_url(self, symbol_zip_url):
-        if platform.system() not in self.options['platformsRequiringSymbols']\
-                or self.have_integrated(symbol_zip_url):
-            return
-
-        LogMessage("Retrieving symbol zip from {symbol_zip_url}...".format(
-            symbol_zip_url=symbol_zip_url))
-        try:
-            io = urllib2.urlopen(symbol_zip_url, None, 30)
-            with zipfile.ZipFile(cStringIO.StringIO(io.read())) as zf:
-                self.integrate_symbol_zip(zf)
-            self._create_file_if_not_exists(self._marker_file(symbol_zip_url))
-        except IOError:
-            LogMessage("Symbol zip request failed.")
-
-    def integrate_symbol_zip_from_file(self, filename):
-        if self.have_integrated(filename):
-            return
-        with open(filename, 'rb') as f:
-            with zipfile.ZipFile(f) as zf:
-                self.integrate_symbol_zip(zf)
-        self._create_file_if_not_exists(self._marker_file(filename))
-
     def _create_file_if_not_exists(self, filename):
         try:
             os.makedirs(os.path.dirname(filename))
@@ -156,14 +119,11 @@ class ProfileSymbolicator:
         except IOError:
             pass
 
-    def integrate_symbol_zip(self, symbol_zip_file):
-        symbol_zip_file.extractall(self.options["symbolPaths"]["FIREFOX"])
-
     def _marker_file(self, symbol_zip_url):
         marker_dir = os.path.join(
             self.options["symbolPaths"]["FIREFOX"], ".markers")
         return os.path.join(marker_dir,
-                            hashlib.sha1(symbol_zip_url).hexdigest())
+                            hashlib.sha1(symbol_zip_url.encode()).hexdigest())
 
     def have_integrated(self, symbol_zip_url):
         return os.path.isfile(self._marker_file(symbol_zip_url))
@@ -201,12 +161,6 @@ class ProfileSymbolicator:
         # We integrate the dumped symbols by dumping them directly into our
         # symbol directory.
         output_dir = self.options["symbolPaths"]["FIREFOX"]
-
-        # Additionally, we add all dumped symbol files to the missingsymbols
-        # zip file.
-        with zipfile.ZipFile(symbol_zip_path, 'a', zipfile.ZIP_DEFLATED) as zf:
-            for lib in unknown_modules:
-                self.dump_and_integrate_symbols_for_lib(lib, output_dir, zf)
 
     def dump_symbols_for_lib(self, lib, output_dir):
         name = lib["debugName"]
@@ -275,7 +229,7 @@ class ProfileSymbolicator:
     def _find_addresses(self, profile_json):
         addresses = set()
         for thread in profile_json["threads"]:
-            if isinstance(thread, basestring):
+            if isinstance(thread, str):
                 continue
             for s in thread["stringTable"]:
                 if s[0:2] == "0x":
@@ -284,7 +238,7 @@ class ProfileSymbolicator:
 
     def _substitute_symbols(self, profile_json, symbolication_table):
         for thread in profile_json["threads"]:
-            if isinstance(thread, basestring):
+            if isinstance(thread, str):
                 continue
             for i, s in enumerate(thread["stringTable"]):
                 thread["stringTable"][i] = symbolication_table.get(s, s)
@@ -293,7 +247,7 @@ class ProfileSymbolicator:
         left = 0
         right = len(libs) - 1
         while left <= right:
-            mid = (left + right) / 2
+            mid = (left + right) // 2
             if address >= libs[mid]["end"]:
                 left = mid + 1
             elif address < libs[mid]["start"]:
@@ -337,11 +291,9 @@ class ProfileSymbolicator:
         return dict(zip(all_symbols, symbolicated_stack))
 
     def symbolicate_profile_file(self, filename):
-        f = open(filename, "r")
-        profile = json.load(f)
-        f.close()
+        with open(filename, "r", encoding='utf-8') as f:
+            profile = json.load(f)
         self.dump_and_integrate_missing_symbols(profile, "missingsymbols.zip")
         self.symbolicate_profile(profile)
-        f = open(filename + ".sym", "w")
-        json.dump(profile, f)
-        f.close()
+        with open(filename + ".sym", "w", encoding='utf-8') as f:
+            json.dump(profile, f)

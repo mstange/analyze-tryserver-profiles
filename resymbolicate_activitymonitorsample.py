@@ -1,15 +1,11 @@
 
 import os
 import symbolication
-import urllib2
-import cStringIO
-import zipfile
-from symFileManager import SymFileManager
 from symbolicationRequest import SymbolicationRequest
 import re
 
-inputsample = open('/Users/mstange/Downloads/metal-linking-crash-1010.txt', 'r')
-outputsample = open('/Users/mstange/Downloads/metal-linking-symbolicated.txt', 'w')
+inputsample = open('/Users/mstange/Downloads/spindump and sample/Sample of Firefox 2025-01-29 2 firefox.txt', 'r')
+outputsample = open('/Users/mstange/Downloads/spindump and sample/Sample of Firefox 2025-01-29 2 firefox-symbolicated.txt', 'w')
 
 gSymbolicationOptions = {
   # Trace-level logging (verbose)
@@ -86,7 +82,7 @@ def process_one_process():
       lib_name_to_module_index[lib_name] = module_index
       if match.group("lib_longname") != lib_name:
         lib_name_to_module_index[match.group("lib_longname")] = module_index
-        print "long name:", match.group("lib_longname")
+        print("long name:", match.group("lib_longname"))
       modules.append([lib_name, convert_libid(match.group("lib_id"))])
       load_addresses.append(load_address)
     else:
@@ -106,7 +102,7 @@ def process_one_process():
   input_end = inputsample.tell()
   inputsample.seek(input_start)
 
-  # print modules
+  # print(modules)
 
   def get_normalized_match(line):
     for reStackLine in reStackLines:
@@ -120,7 +116,7 @@ def process_one_process():
         module_index = lib_name_to_module_index[d["lib_name"]]
       else:
         if "lib_name" in d:
-          print "Couldn't find lib name", d["lib_name"]
+          print("Couldn't find lib name", d["lib_name"])
         continue
       if "absolute_frame_address" in d:
         absolute_frame_address = int(d["absolute_frame_address"], 0)
@@ -148,8 +144,8 @@ def process_one_process():
       continue
   inputsample.seek(input_start)
 
-  # print stack
-  # print modules
+  # print(stack)
+  # print(modules)
 
   rawRequest = { "stacks": [stack], "memoryMap": modules, "version": 4, "symbolSources": ["firefox"] }
   request = SymbolicationRequest(symbolicator.sym_file_manager, rawRequest)

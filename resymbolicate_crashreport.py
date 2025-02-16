@@ -11,7 +11,7 @@ import re
 import json
 
 crashreportID = '80b5e83c-bb2b-4f85-b44a-400ad0190830'
-inputsample = open('/Users/mozilla/Downloads/nightlysample.txt', 'r')
+inputsample = open('/Users/mozilla/Downloads/.txt', 'r')
 
 def get_raw_dump(reportID):
   url = 'https://crash-stats.mozilla.com/report/index/' + reportID

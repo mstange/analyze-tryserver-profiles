@@ -7,11 +7,12 @@ import symFileManager
 
 import re
 import json
-import urllib2
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
 from bisect import bisect
 
 # Precompiled regex for validating lib names
-gLibNameRE = re.compile("[0-9a-zA-Z_+\-\.]*$") # Empty lib name means client couldn't associate frame with any lib
+gLibNameRE = re.compile(r"[0-9a-zA-Z_+\-\.]*$") # Empty lib name means client couldn't associate frame with any lib
 gPdbSigRE = re.compile("{([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{12})}$")
 gPdbSigRE2 = re.compile("[0-9a-fA-F]{32}$")
 
@@ -25,11 +26,11 @@ class ModuleV3:
     self.breakpadId = breakpadId
 
 def getModuleV3(libName, breakpadId):
-  if not isinstance(libName, basestring) or not gLibNameRE.match(libName):
+  if not isinstance(libName, str) or not gLibNameRE.match(libName):
     LogTrace("Bad library name: " + str(libName))
     return None
 
-  if not isinstance(breakpadId, basestring):
+  if not isinstance(breakpadId, str):
     LogTrace("Bad breakpad id: " + str(breakpadId))
     return None
 
@@ -74,7 +75,7 @@ class SymbolicationRequest:
         return
 
       if "forwarded" in rawRequests:
-        if not isinstance(rawRequests["forwarded"], (int, long)):
+        if not isinstance(rawRequests["forwarded"], int):
           LogTrace("Invalid 'forwards' field: " + str(rawRequests["forwarded"]))
           return
         self.forwardCount = rawRequests["forwarded"]
@@ -186,9 +187,9 @@ class SymbolicationRequest:
                        "forwarded": self.forwardCount + 1, "version": requestVersion }
         requestJson = json.dumps(requestObj)
         headers = { "Content-Type": "application/json" }
-        requestHandle = urllib2.Request(url, requestJson, headers)
+        requestHandle = Request(url, requestJson.encode('utf-8'), headers)
         try:
-          response = urllib2.urlopen(requestHandle)
+          response = urlopen(requestHandle)
         except Exception as e:
           if requestVersion == 4:
             # Try again with version 3

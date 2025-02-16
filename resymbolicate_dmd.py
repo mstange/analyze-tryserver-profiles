@@ -1,8 +1,7 @@
-
 import os
 import symbolication
-import urllib2
-import cStringIO
+from urllib.request import urlopen
+from io import BytesIO
 import zipfile
 from symFileManager import SymFileManager
 from symbolicationRequest import SymbolicationRequest
@@ -45,8 +44,8 @@ gSymbolicationOptions = {
 }
 
 symbolicator = symbolication.ProfileSymbolicator(gSymbolicationOptions)
-io = urllib2.urlopen(symbols_zip_url, None, 30)
-sio = cStringIO.StringIO(io.read())
+io = urlopen(symbols_zip_url, timeout=30)
+sio = BytesIO(io.read())
 zf = zipfile.ZipFile(sio)
 symbolicator.integrate_symbol_zip(zf)
 moduleDict = {}
